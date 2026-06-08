@@ -782,15 +782,15 @@ export default function App() {
 
               {/* 주민 1인 심화 프로필 뷰 영역 */}
               {selectedResident && (
-                <div className="xl:col-span-1 bg-white border border-indigo-600/35 rounded shadow-sm p-4 flex flex-col gap-3 relative">
+                <div className="xl:col-span-1 bg-white border border-indigo-600/35 rounded shadow-sm p-4 flex flex-col gap-3 relative max-h-[85vh] xl:max-h-[850px]">
                   <button
                     onClick={() => setSelectedResident(null)}
-                    className="absolute top-4 right-4 p-1 rounded hover:bg-slate-100 text-slate-400 transition-colors cursor-pointer"
+                    className="absolute top-4 right-4 p-1 rounded hover:bg-slate-100 text-slate-400 transition-colors cursor-pointer z-10"
                   >
                     <X className="w-4 h-4" />
                   </button>
 
-                  <div className="border-b border-slate-200 pb-2.5">
+                  <div className="border-b border-slate-200 pb-2.5 flex-none select-none">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                       selectedResident.gender === '남성' ? 'bg-cyan-50 text-cyan-700 border border-cyan-150' : 'bg-rose-50 text-rose-700 border border-rose-150'
                     }`}>
@@ -800,131 +800,134 @@ export default function App() {
                     <p className="text-[10px] text-slate-400">등록일: {selectedResident.registeredAt}</p>
                   </div>
 
-                  {/* 인적 사유 정보 */}
-                  <div className="space-y-2 text-xs text-slate-700 bg-slate-50 p-2.5 rounded border border-slate-200">
+                  {/* 스크롤 가능한 본문 영역 */}
+                  <div className="flex-1 overflow-y-auto pr-1 space-y-4 max-h-[60vh] xl:max-h-[700px] scrollbar-thin">
+                    {/* 인적 사유 정보 */}
+                    <div className="space-y-2 text-xs text-slate-700 bg-slate-50 p-2.5 rounded border border-slate-200">
+                      <div>
+                        <span className="font-semibold text-slate-500 block text-[10px]">📞 안부 비상연락처</span>
+                        <span className="font-mono text-slate-800">{selectedResident.phone || '등록대기'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-500 block text-[10px]">🏠 실제 주소지</span>
+                        <span className="text-slate-800 leading-relaxed text-[11px]">{selectedResident.address || '기재대기'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-500 block text-[10px]">📝 사례 진단 특이사항</span>
+                        <p className="text-[11px] text-slate-600 bg-white p-2 rounded border border-slate-200 leading-relaxed mt-1 whitespace-pre-wrap">
+                          {selectedResident.notes || '접수된 구체적인 인적상태 진단 요약이 존재하지 않습니다.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 1. 참여 이력 세부 목록 */}
                     <div>
-                      <span className="font-semibold text-slate-500 block text-[10px]">📞 안부 비상연락처</span>
-                      <span className="font-mono text-slate-800">{selectedResident.phone || '등록대기'}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold text-slate-500 block text-[10px]">🏠 실제 주소지</span>
-                      <span className="text-slate-800 leading-relaxed text-[11px]">{selectedResident.address || '기재대기'}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold text-slate-500 block text-[10px]">📝 사례 진단 특이사항</span>
-                      <p className="text-[11px] text-slate-600 bg-white p-2 rounded border border-slate-200 leading-relaxed mt-1 whitespace-pre-wrap">
-                        {selectedResident.notes || '접수된 구체적인 인적상태 진단 요약이 존재하지 않습니다.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* 1. 참여 이력 세부 목록 */}
-                  <div>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                        복지 서비스 참여기록 ({currentResidentParticipations.length}건)
-                      </h4>
-                      <button
-                        onClick={() => {
-                          setNewParticipation(prev => ({ ...prev, residentId: selectedResident.id }));
-                          setShowParticipationModal(true);
-                        }}
-                        className="text-[10px] bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold px-2 py-0.5 rounded border border-blue-200 flex items-center gap-0.5 cursor-pointer transition-colors"
-                      >
-                        <Plus className="w-2.5 h-2.5" />
-                        기록 추가
-                      </button>
-                    </div>
-                    
-                    <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                      {currentResidentParticipations.map(p => (
-                        <div key={p.id} className="p-2 bg-blue-50/40 border border-blue-100 rounded flex justify-between items-start text-xs group">
-                          <div className="flex-1 min-w-0 pr-2">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-blue-900 truncate text-[11px]">{p.programName}</span>
-                              <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold capitalize ${
-                                p.progressStatus === '완료' 
-                                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
-                                  : p.progressStatus === '진행중' 
-                                  ? 'bg-blue-50 text-blue-800 border border-blue-205'
-                                  : 'bg-amber-55 text-amber-800'
-                              }`}>
-                                {p.progressStatus}
-                              </span>
-                            </div>
-                            <div className="text-[10px] text-slate-400 mt-0.5">{p.participationDate} (총 {p.durationHours}시간)</div>
-                            {p.notes && <p className="text-[10px] text-slate-600 mt-1 bg-white p-1 rounded border border-blue-50">{p.notes}</p>}
-                          </div>
-                          <button
-                            onClick={() => handleDeleteParticipation(p.id)}
-                            className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer p-0.5"
-                            title="기록 삭제"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                      {currentResidentParticipations.length === 0 && (
-                        <div className="text-center p-3 text-slate-400 bg-slate-50 rounded border border-slate-200 text-[11px]">
-                          참여한 프로그램 기록이 비어있습니다.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 2. 소셜 관계인 교보 목록 */}
-                  <div>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1">
-                        <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
-                        지역 이웃 관계망 ({currentResidentRelationships.length}명)
-                      </h4>
-                      <button
-                        onClick={() => {
-                          setNewRelationship(prev => ({ ...prev, sourceId: selectedResident.id }));
-                          setShowRelationshipModal(true);
-                        }}
-                        className="text-[10px] bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold px-2 py-0.5 rounded border border-indigo-200 flex items-center gap-0.5 cursor-pointer transition-colors"
-                      >
-                        <Plus className="w-2.5 h-2.5" />
-                        관계선 추가
-                      </button>
-                    </div>
-
-                    <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                      {currentResidentRelationships.map(rel => {
-                        const otherId = rel.sourceId === selectedResident.id ? rel.targetId : rel.sourceId;
-                        const otherResident = residents.find(r => r.id === otherId);
-
-                        if (!otherResident) return null;
-
-                        return (
-                          <div key={rel.id} className="p-2 bg-indigo-50/40 border border-indigo-100 rounded flex justify-between items-center text-xs group">
-                            <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                          복지 서비스 참여기록 ({currentResidentParticipations.length}건)
+                        </h4>
+                        <button
+                          onClick={() => {
+                            setNewParticipation(prev => ({ ...prev, residentId: selectedResident.id }));
+                            setShowParticipationModal(true);
+                          }}
+                          className="text-[10px] bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold px-2 py-0.5 rounded border border-blue-200 flex items-center gap-0.5 cursor-pointer transition-colors"
+                        >
+                          <Plus className="w-2.5 h-2.5" />
+                          기록 추가
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                        {currentResidentParticipations.map(p => (
+                          <div key={p.id} className="p-2 bg-blue-50/40 border border-blue-100 rounded flex justify-between items-start text-xs group">
+                            <div className="flex-1 min-w-0 pr-2">
                               <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-slate-800 text-[11px]">{otherResident.name}</span>
-                                <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-semibold">{rel.relationType}</span>
-                                <span className="text-amber-500 font-semibold text-[9px]">{'★'.repeat(rel.strength)}</span>
+                                <span className="font-bold text-blue-900 truncate text-[11px]">{p.programName}</span>
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold capitalize ${
+                                  p.progressStatus === '완료' 
+                                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
+                                    : p.progressStatus === '진행중' 
+                                    ? 'bg-blue-50 text-blue-800 border border-blue-205'
+                                    : 'bg-amber-55 text-amber-800'
+                                }`}>
+                                  {p.progressStatus}
+                                </span>
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">상세: {rel.notes || '상태교류 일지 미작성'}</div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{p.participationDate} (총 {p.durationHours}시간)</div>
+                              {p.notes && <p className="text-[10px] text-slate-600 mt-1 bg-white p-1 rounded border border-blue-50">{p.notes}</p>}
                             </div>
                             <button
-                              onClick={() => handleDeleteRelationship(rel.id)}
+                              onClick={() => handleDeleteParticipation(p.id)}
                               className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer p-0.5"
-                              title="관계 끊기"
+                              title="기록 삭제"
                             >
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
-                        );
-                      })}
-                      {currentResidentRelationships.length === 0 && (
-                        <div className="text-center p-3 text-red-500 bg-red-50 border border-red-200 rounded text-[11px] font-semibold flex flex-col items-center justify-center gap-1">
-                          <AlertTriangle className="w-4 h-4 text-red-400" />
-                          <span>이웃 관계망 분석 격리 상태입니다!</span>
-                        </div>
-                      )}
+                        ))}
+                        {currentResidentParticipations.length === 0 && (
+                          <div className="text-center p-3 text-slate-400 bg-slate-50 rounded border border-slate-200 text-[11px]">
+                            참여한 프로그램 기록이 비어있습니다.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 2. 소셜 관계인 교보 목록 */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                          <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
+                          지역 이웃 관계망 ({currentResidentRelationships.length}명)
+                        </h4>
+                        <button
+                          onClick={() => {
+                            setNewRelationship(prev => ({ ...prev, sourceId: selectedResident.id }));
+                            setShowRelationshipModal(true);
+                          }}
+                          className="text-[10px] bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold px-2 py-0.5 rounded border border-indigo-200 flex items-center gap-0.5 cursor-pointer transition-colors"
+                        >
+                          <Plus className="w-2.5 h-2.5" />
+                          관계선 추가
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                        {currentResidentRelationships.map(rel => {
+                          const otherId = rel.sourceId === selectedResident.id ? rel.targetId : rel.sourceId;
+                          const otherResident = residents.find(r => r.id === otherId);
+
+                          if (!otherResident) return null;
+
+                          return (
+                            <div key={rel.id} className="p-2 bg-indigo-50/40 border border-indigo-100 rounded flex justify-between items-center text-xs group">
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-slate-800 text-[11px]">{otherResident.name}</span>
+                                  <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-semibold">{rel.relationType}</span>
+                                  <span className="text-amber-500 font-semibold text-[9px]">{'★'.repeat(rel.strength)}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-500 mt-0.5">상세: {rel.notes || '상태교류 일지 미작성'}</div>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteRelationship(rel.id)}
+                                className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer p-0.5"
+                                title="관계 끊기"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {currentResidentRelationships.length === 0 && (
+                          <div className="text-center p-3 text-red-500 bg-red-50 border border-red-200 rounded text-[11px] font-semibold flex flex-col items-center justify-center gap-1">
+                            <AlertTriangle className="w-4 h-4 text-red-400" />
+                            <span>이웃 관계망 분석 격리 상태입니다!</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
