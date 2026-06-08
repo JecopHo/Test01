@@ -181,42 +181,7 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
       .enter().append('line')
       .attr('stroke', 'transparent')
       .attr('stroke-width', 15)
-      .style('cursor', 'pointer')
-      .on('mouseenter', function (event, d) {
-        const sourceNode = typeof d.source === 'object' ? d.source.name : d.source;
-        const targetNode = typeof d.target === 'object' ? d.target.name : d.target;
-        
-        // 툴팁 생성
-        const tooltip = d3.select('#graph-tooltip');
-        tooltip.style('opacity', 1)
-          .html(`
-            <div class="px-3 py-2 text-xs bg-gray-900 border border-semibold text-white rounded-md shadow-lg max-w-xs">
-              <p class="font-bold flex items-center gap-1">
-                <span class="w-2 h-2 rounded-full inline-block" style="background-color: ${
-                  d.relationType === '이웃' ? '#10b981' : d.relationType === '돌봄제공자' ? '#3b82f6' : '#8b5cf6'
-                }"></span>
-                ${sourceNode} ⇆ ${targetNode} [${d.relationType}]
-              </p>
-              <p class="mt-1 text-gray-300">내용: ${d.notes || '교류 정보 없음'}</p>
-              <p class="mt-1 text-yellow-400 font-semibold text-[11px]">교류강도: ${'★'.repeat(d.strength)} (${d.strength}/5)</p>
-            </div>
-          `)
-          .style('left', (event.pageX + 10) + 'px')
-          .style('top', (event.pageY - 15) + 'px');
-
-        d3.select(this)
-          .attr('stroke', '#4b5563')
-          .attr('stroke-opacity', 0.2);
-      })
-      .on('mousemove', function (event) {
-        d3.select('#graph-tooltip')
-          .style('left', (event.pageX + 10) + 'px')
-          .style('top', (event.pageY - 15) + 'px');
-      })
-      .on('mouseleave', function () {
-        d3.select('#graph-tooltip').style('opacity', 0);
-        d3.select(this).attr('stroke', 'transparent');
-      });
+      .style('cursor', 'pointer');
 
     // 6. 노드 그룹핑 (배경 서클 + 이니셜 텍스트)
     const node = gContainer.append('g')
@@ -224,56 +189,219 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
       .selectAll<SVGGElement, GraphNode>('g')
       .data(nodesCopy)
       .enter().append('g')
-      .style('cursor', 'pointer')
+      .style('cursor', 'pointer');
+
+    // 터치 및 모바일 인터랙션 상태 관리
+    let touchTimer: any = null;
+    let isHoldingLink = false;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchMoved = false;
+    let activeTouchNodeId: string | null = null;
+
+    const activateNodeHighlight = (d: GraphNode, clientX: number, clientY: number) => {
+      // 호버 시 인접한 연결 정보 하이라이트
+      const adjNodeIds = new Set<string>([d.id]);
+      
+      linksCopy.forEach(l => {
+        const sId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tId = typeof l.target === 'object' ? l.target.id : l.target;
+        if (sId === d.id) adjNodeIds.add(tId);
+        if (tId === d.id) adjNodeIds.add(sId);
+      });
+
+      // 타 노드들 불투명화
+      node.style('opacity', n => adjNodeIds.has(n.id) ? 1.0 : 0.15);
+      link.style('opacity', l => {
+        const sId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tId = typeof l.target === 'object' ? l.target.id : l.target;
+        return (sId === d.id || tId === d.id) ? 1.0 : 0.08;
+      });
+
+      // 툴팁 활성
+      const tooltip = d3.select('#graph-tooltip');
+      tooltip.style('opacity', 1)
+        .html(`
+          <div class="px-3 py-2 text-xs bg-white text-gray-800 border border-gray-200 rounded shadow-xl max-w-xs leading-relaxed">
+            <p class="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+              ${d.name} <span class="text-xs text-gray-500 font-normal">(${d.gender}, ${d.age}세)</span>
+              ${d.isIsolated ? '<span class="bg-red-100 text-red-700 text-[10px] px-1 rounded font-normal">고립선별</span>' : ''}
+            </p>
+            <p class="mt-1 text-gray-600 line-clamp-3 bg-gray-50 p-1.5 rounded text-[11px]">${d.notes || '기록된 복지 특이조건이 없습니다.'}</p>
+            <p class="mt-1 text-[10px] text-gray-400">💡 클릭하면 해당 주민의 상세 프로파일로 즉시 이동합니다.</p>
+          </div>
+        `)
+        .style('left', (clientX + 15) + 'px')
+        .style('top', (clientY + 15) + 'px');
+    };
+
+    const resetNodeHighlight = () => {
+      node.style('opacity', 1.0);
+      link.style('opacity', 0.8);
+      d3.select('#graph-tooltip').style('opacity', 0);
+    };
+
+    const activateLinkHighlight = (el: any, clientX: number, clientY: number, d: GraphLink) => {
+      const sourceNode = typeof d.source === 'object' ? d.source.name : d.source;
+      const targetNode = typeof d.target === 'object' ? d.target.name : d.target;
+      
+      // 툴팁 생성
+      const tooltip = d3.select('#graph-tooltip');
+      tooltip.style('opacity', 1)
+        .html(`
+          <div class="px-3 py-2 text-xs bg-gray-900 border border-semibold text-white rounded shadow-lg max-w-xs">
+            <p class="font-bold flex items-center gap-1">
+              <span class="w-2 h-2 rounded inline-block" style="background-color: ${
+                d.relationType === '이웃' ? '#10b981' : d.relationType === '돌봄제공자' ? '#3b82f6' : '#8b5cf6'
+              }"></span>
+              ${sourceNode} ⇆ ${targetNode} [${d.relationType}]
+            </p>
+            <p class="mt-1 text-gray-300">내용: ${d.notes || '교류 정보 없음'}</p>
+            <p class="mt-1 text-yellow-500 font-semibold text-[11px]">교류강도: ${'★'.repeat(d.strength)} (${d.strength}/5)</p>
+          </div>
+        `)
+        .style('left', (clientX + 10) + 'px')
+        .style('top', (clientY - 15) + 'px');
+
+      d3.select(el)
+        .attr('stroke', '#4b5563')
+        .attr('stroke-opacity', 0.2);
+    };
+
+    const resetLinkHighlight = (el: any) => {
+      d3.select('#graph-tooltip').style('opacity', 0);
+      d3.select(el).attr('stroke', 'transparent');
+    };
+
+    // 관계선 인터랙션 바인딩
+    linkHover
+      .on('mouseenter', function (event, d) {
+        activateLinkHighlight(this, event.clientX, event.clientY, d);
+      })
+      .on('mousemove', function (event) {
+        d3.select('#graph-tooltip')
+          .style('left', (event.clientX + 10) + 'px')
+          .style('top', (event.clientY - 15) + 'px');
+      })
+      .on('mouseleave', function () {
+        resetLinkHighlight(this);
+      })
+      .on('touchstart', function (event: any, d) {
+        isHoldingLink = false;
+        if (event.touches.length > 1) return;
+        
+        const touch = event.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        const targetEl = this;
+        
+        if (touchTimer) clearTimeout(touchTimer);
+        touchTimer = setTimeout(() => {
+          isHoldingLink = true;
+          activateLinkHighlight(targetEl, touch.clientX, touch.clientY, d);
+        }, 350);
+      })
+      .on('touchmove', function (event: any) {
+        if (touchTimer) {
+          const touch = event.touches[0];
+          const dx = touch.clientX - touchStartX;
+          const dy = touch.clientY - touchStartY;
+          if (Math.sqrt(dx * dx + dy * dy) > 10) {
+            clearTimeout(touchTimer);
+            touchTimer = null;
+          } else if (isHoldingLink) {
+            d3.select('#graph-tooltip')
+              .style('left', (touch.clientX + 10) + 'px')
+              .style('top', (touch.clientY - 15) + 'px');
+          }
+        }
+      })
+      .on('touchend', function (event: any) {
+        if (touchTimer) {
+          clearTimeout(touchTimer);
+          touchTimer = null;
+        }
+        if (isHoldingLink) {
+          event.preventDefault();
+          isHoldingLink = false;
+          resetLinkHighlight(this);
+        }
+      })
+      .on('touchcancel', function () {
+        if (touchTimer) {
+          clearTimeout(touchTimer);
+          touchTimer = null;
+        }
+        if (isHoldingLink) {
+          isHoldingLink = false;
+          resetLinkHighlight(this);
+        }
+      });
+
+    // 노드 인터랙션 바인딩
+    node
       .on('click', (event, d) => {
+        // 데스크탑 클릭: 단일 클릭 시 즉시 프로필 이동
         const clickedResident = residents.find(r => r.id === d.id);
         if (clickedResident) onSelectResident(clickedResident);
         setHighlightedNodeId(d.id);
       })
       .on('mouseenter', function (event, d) {
-        // 호버 시 인접한 연결 정보 하이라이트
-        const adjNodeIds = new Set<string>([d.id]);
-        
-        linksCopy.forEach(l => {
-          const sId = typeof l.source === 'object' ? l.source.id : l.source;
-          const tId = typeof l.target === 'object' ? l.target.id : l.target;
-          if (sId === d.id) adjNodeIds.add(tId);
-          if (tId === d.id) adjNodeIds.add(sId);
-        });
-
-        // 타 노드들 불투명화
-        node.style('opacity', n => adjNodeIds.has(n.id) ? 1.0 : 0.15);
-        link.style('opacity', l => {
-          const sId = typeof l.source === 'object' ? l.source.id : l.source;
-          const tId = typeof l.target === 'object' ? l.target.id : l.target;
-          return (sId === d.id || tId === d.id) ? 1.0 : 0.08;
-        });
-
-        // 툴팁 활성
-        const tooltip = d3.select('#graph-tooltip');
-        tooltip.style('opacity', 1)
-          .html(`
-            <div class="px-3 py-2 text-xs bg-white text-gray-800 border border-gray-200 rounded-md shadow-xl max-w-xs leading-relaxed">
-              <p class="font-bold text-gray-900 text-sm flex items-center gap-1.5">
-                ${d.name} <span class="text-xs text-gray-500 font-normal">(${d.gender}, ${d.age}세)</span>
-                ${d.isIsolated ? '<span class="bg-red-100 text-red-700 text-[10px] px-1 rounded font-normal">고립선별</span>' : ''}
-              </p>
-              <p class="mt-1 text-gray-600 line-clamp-3 bg-gray-50 p-1.5 rounded text-[11px]">${d.notes || '기록된 복지 특이조건이 없습니다.'}</p>
-              <p class="mt-1 text-[10px] text-gray-400">💡 클릭하면 해당 주민의 상세 프로파일로 즉시 이동합니다.</p>
-            </div>
-          `)
-          .style('left', (event.pageX + 15) + 'px')
-          .style('top', (event.pageY + 15) + 'px');
+        activateNodeHighlight(d, event.clientX, event.clientY);
       })
       .on('mousemove', function (event) {
         d3.select('#graph-tooltip')
-          .style('left', (event.pageX + 15) + 'px')
-          .style('top', (event.pageY + 15) + 'px');
+          .style('left', (event.clientX + 15) + 'px')
+          .style('top', (event.clientY + 15) + 'px');
       })
       .on('mouseleave', function () {
-        node.style('opacity', 1.0);
-        link.style('opacity', 0.8);
-        d3.select('#graph-tooltip').style('opacity', 0);
+        resetNodeHighlight();
+      })
+      .on('touchstart', function (event: any, d) {
+        if (event.touches.length > 1) return;
+        
+        const touch = event.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        touchMoved = false;
+      })
+      .on('touchmove', function (event: any, d) {
+        const touch = event.touches[0];
+        const dx = touch.clientX - touchStartX;
+        const dy = touch.clientY - touchStartY;
+        // 드래그 거리 측정 (10px 이상이면 단순 탭이 아닌 드래깅으로 작동)
+        if (Math.sqrt(dx * dx + dy * dy) > 10) {
+          touchMoved = true;
+        } else if (activeTouchNodeId === d.id) {
+          // 이미 활성화된 상태의 툴팁이라면 미세하게 이동 트래킹
+          d3.select('#graph-tooltip')
+            .style('left', (touch.clientX + 15) + 'px')
+            .style('top', (touch.clientY + 15) + 'px');
+        }
+      })
+      .on('touchend', function (event: any, d) {
+        if (touchMoved) return; // 제스처(드래그) 상태였을 경우는 리턴
+        
+        event.preventDefault();
+        event.stopPropagation();
+        
+        if (activeTouchNodeId !== d.id) {
+          // 첫 번째 터치: 상호 관계망 하이라이트 활성화 및 상세 설명 플로팅창 표시
+          activateNodeHighlight(d, touchStartX, touchStartY);
+          activeTouchNodeId = d.id;
+        } else {
+          // 두 번째 터치 (같은 노드 연달아 터치): 상세 정보 프로필로 진입
+          const clickedResident = residents.find(r => r.id === d.id);
+          if (clickedResident) onSelectResident(clickedResident);
+          setHighlightedNodeId(d.id);
+          
+          // 리셋 후 선택 해제
+          resetNodeHighlight();
+          activeTouchNodeId = null;
+        }
+      })
+      .on('touchcancel', function () {
+        touchMoved = true;
       })
       .call(d3.drag<SVGGElement, GraphNode>()
         .on('start', dragstarted)
@@ -362,6 +490,21 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
       zoomBehavior.transform,
       d3.zoomIdentity.translate(0, 0).scale(0.95)
     );
+
+    // 빈 배경 클릭/터치 시 하이라이트 해제 및 모바일 활성화 상태 초기화
+    svg.on('click', function(event) {
+      if (event.target === svgRef.current) {
+        resetNodeHighlight();
+        activeTouchNodeId = null;
+      }
+    });
+
+    svg.on('touchstart', function(event) {
+      if (event.target === svgRef.current) {
+        resetNodeHighlight();
+        activeTouchNodeId = null;
+      }
+    });
 
     return () => {
       simulation.stop();
