@@ -19,6 +19,7 @@ import {
   RefreshCw, 
   UserPlus, 
   Calendar, 
+  CalendarCheck,
   Link as LinkIcon, 
   Info, 
   X,
@@ -45,12 +46,16 @@ export default function App() {
   });
   
   // UI 컨트롤
-  const [activeTab, setActiveTab] = useState<'residents' | 'graph' | 'programs' | 'gasSetup'>('residents');
+  const [activeTab, setActiveTab] = useState<'residents' | 'graph' | 'programGroups' | 'programs'>('residents');
   const [selectedResident, setSelectedResident] = useState<Resident | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
+
+  // 프로그램별 분할 전용 상태
+  const [selectedProgram, setSelectedProgram] = useState<string>('');
+  const [programSearch, setProgramSearch] = useState<string>('');
 
   // 모달 제어 상태
   const [showResidentModal, setShowResidentModal] = useState<boolean>(false);
@@ -58,7 +63,7 @@ export default function App() {
   const [showRelationshipModal, setShowRelationshipModal] = useState<boolean>(false);
 
   // 폼 입력용 임시 상태
-  const [editingResident, setEditingResident] = useState<Partial<Resident> | null>(null);
+  const [editingResident, setEditingResident] = useState<Partial<Resident & { initialProgram?: string }> | null>(null);
   const [newParticipation, setNewParticipation] = useState<Partial<Participation>>({
     programName: '',
     participationDate: new Date().toISOString().split('T')[0],
@@ -78,6 +83,7 @@ export default function App() {
   const [residentSearch, setResidentSearch] = useState<string>('');
   const [genderFilter, setGenderFilter] = useState<string>('모두');
   const [ageRangeFilter, setAgeRangeFilter] = useState<string>('모두');
+  const [dongFilter, setDongFilter] = useState<string>('모두');
 
   // --- 데이터 불러오기 및 초기화 ---
   useEffect(() => {
@@ -234,18 +240,40 @@ export default function App() {
       age: Number(editingResident.age || 70),
       phone: editingResident.phone || '010-0000-0000',
       address: editingResident.address || '미정',
+      dong: editingResident.dong || '기타 동',
       notes: editingResident.notes || '',
       registeredAt: editingResident.registeredAt || new Date().toISOString().split('T')[0]
     };
 
+    let updatedParticipations = [...participations];
+
     if (isNew) {
       updatedResidents.unshift(targetResident);
+
+      // 혹시 신규 등록 단계에서 참여 프로그램을 기입했을 시, 해당 내역도 연계 생성
+      if (editingResident.initialProgram && editingResident.initialProgram.trim() !== '') {
+        const participationId = 'P_' + Date.now();
+        const newPart: Participation = {
+          id: participationId,
+          residentId: residentId,
+          programName: editingResident.initialProgram.trim(),
+          participationDate: new Date().toISOString().split('T')[0],
+          durationHours: 2,
+          progressStatus: '진행중',
+          notes: '주민 신규 편적 시 자동 등록된 프로그램'
+        };
+        updatedParticipations = [newPart, ...participations];
+        setParticipations(updatedParticipations);
+
+        // 구글 시트 연동 비동기 실행 (에러 핸들러 기본 내장됨)
+        await postToGAS('addParticipation', newPart);
+      }
     } else {
       updatedResidents = updatedResidents.map(r => r.id === residentId ? targetResident : r);
     }
 
     setResidents(updatedResidents);
-    saveToLocalStorage(updatedResidents, participations, relationships);
+    saveToLocalStorage(updatedResidents, updatedParticipations, relationships);
 
     // 상세 프로필 뷰 동기화
     if (selectedResident && selectedResident.id === residentId) {
@@ -421,9 +449,11 @@ export default function App() {
       else if (ageRangeFilter === '70대') matchAge = res.age >= 70 && res.age < 80;
       else if (ageRangeFilter === '80이상') matchAge = res.age >= 80;
 
-      return matchSearch && matchGender && matchAge;
+      const matchDong = dongFilter === '모두' || (res.dong || '기타 동') === dongFilter;
+
+      return matchSearch && matchGender && matchAge && matchDong;
     });
-  }, [residents, residentSearch, genderFilter, ageRangeFilter]);
+  }, [residents, residentSearch, genderFilter, ageRangeFilter, dongFilter]);
 
   // 해당 주민과 얽힌 프로그램 참여 이력 목록
   const currentResidentParticipations = useMemo(() => {
@@ -477,7 +507,7 @@ export default function App() {
                 GAS 풀스택 API 연결지원
               </span>
             </h1>
-            <p className="text-xs text-indigo-300">종합사회복지관 2팀 · 구글 스프레드시트 소셜 관계 데이터 분석 엣지</p>
+            <p className="text-xs text-indigo-300">면목종합사회복지관 소셜 관계 데이터</p>
           </div>
         </div>
 
@@ -506,17 +536,6 @@ export default function App() {
                 <span>데이터 동기화</span>
               </button>
             )}
-            <button
-              onClick={() => setActiveTab('gasSetup')}
-              className={`p-1.5 px-3 rounded border text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeTab === 'gasSetup' 
-                  ? 'bg-indigo-500 text-white border-indigo-400' 
-                  : 'bg-indigo-850 hover:bg-indigo-800 text-indigo-200 border-indigo-750'
-              }`}
-            >
-              <Database className="w-3.5 h-3.5" />
-              연결 설정
-            </button>
           </div>
         </div>
       </header>
@@ -568,15 +587,36 @@ export default function App() {
             </div>
           </div>
 
-          <div className="bg-slate-800 text-white p-3 rounded border border-slate-700 shadow-sm flex flex-col justify-between col-span-2 md:col-span-4 lg:col-span-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] text-indigo-300 font-bold uppercase tracking-wider">Cloud Space</span>
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+          <div className="bg-white p-3 rounded border border-slate-200 shadow-sm flex flex-col justify-between col-span-2 md:col-span-4 lg:col-span-1">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-1 mb-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">동별 등록 인원 현황</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse"></span>
             </div>
-            <div className="mt-1">
-              <div className="text-[10px] text-slate-300 font-semibold">데이터 저장 인원 제한</div>
-              <div className="text-lg font-bold text-white">∞ 무제한 무료</div>
-              <div className="text-[9px] text-indigo-300 mt-0.5">GAS API 기반 무제한 추가 수집</div>
+            <div className="space-y-1 text-[10px]">
+              {(() => {
+                const totalCount = residents.length || 1;
+                const dongs: ('면목 4동' | '면목 7동' | '면목 5동' | '면목 3·8동' | '기타 동')[] = [
+                  '면목 4동', '면목 7동', '면목 5동', '면목 3·8동', '기타 동'
+                ];
+                return dongs.map(dongName => {
+                  const count = residents.filter(r => (r.dong || '기타 동') === dongName).length;
+                  const percentage = Math.round((count / totalCount) * 100);
+                  return (
+                    <div key={dongName} className="space-y-0.5">
+                      <div className="flex justify-between items-center text-slate-600">
+                        <span className="font-medium text-slate-700">{dongName}</span>
+                        <span className="font-semibold text-slate-900 font-mono">{count}명 ({percentage}%)</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1">
+                        <div
+                          className="bg-indigo-600 h-1 rounded-full transition-all duration-300"
+                          style={{ width: `${percentage}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
@@ -595,7 +635,7 @@ export default function App() {
             }`}
           >
             <Users className="w-4 h-4" />
-            주민 원장 및 돌봄 명록
+            주민 정보탭
           </button>
           <button
             onClick={() => { setActiveTab('graph'); setSelectedResident(null); }}
@@ -606,7 +646,18 @@ export default function App() {
             }`}
           >
             <Map className="w-4 h-4" />
-            이웃 인공지능 관계망 지도
+            이웃 관계망 지도
+          </button>
+          <button
+            onClick={() => { setActiveTab('programGroups'); setSelectedResident(null); }}
+            className={`px-5 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+              activeTab === 'programGroups' 
+                ? 'border-indigo-600 text-indigo-700 font-bold bg-indigo-50/45 rounded-t-lg' 
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <CalendarCheck className="w-4 h-4" />
+            참여 프로그램
           </button>
           <button
             onClick={() => { setActiveTab('programs'); setSelectedResident(null); }}
@@ -617,19 +668,9 @@ export default function App() {
             }`}
           >
             <Layers className="w-4 h-4" />
-            복지관 서비스 수혜 현황
+            서비스 현황
           </button>
-          <button
-            onClick={() => { setActiveTab('gasSetup'); setSelectedResident(null); }}
-            className={`px-5 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all cursor-pointer ml-auto ${
-              activeTab === 'gasSetup' 
-                ? 'border-indigo-650 text-indigo-700 font-bold bg-indigo-50/45 rounded-t-lg' 
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Database className="w-4 h-4" />
-            구글 시트 연동 설계실 (Apps Script)
-          </button>
+
         </div>
 
         {/* 탭 분기 내용 그리기 */}
@@ -652,7 +693,9 @@ export default function App() {
                         age: 78,
                         phone: '',
                         address: '',
+                        dong: '면목 4동',
                         notes: '',
+                        initialProgram: '',
                         registeredAt: new Date().toISOString().split('T')[0]
                       });
                       setShowResidentModal(true);
@@ -665,14 +708,14 @@ export default function App() {
                 </div>
 
                 {/* 검색 필터 바 */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded border border-slate-200">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 bg-slate-50 p-2.5 rounded border border-slate-200">
                   <div className="relative">
                     <input
                       type="text"
                       placeholder="이름, 연락처, 주소 검색"
                       value={residentSearch}
                       onChange={(e) => setResidentSearch(e.target.value)}
-                      className="w-full text-xs pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded outline-hidden focus:ring-2 focus:ring-indigo-500"
+                      className="w-full text-xs pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded outline-hidden focus:ring-2 focus:ring-indigo-500 h-[32px]"
                     />
                     <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                   </div>
@@ -680,7 +723,7 @@ export default function App() {
                     <select
                       value={genderFilter}
                       onChange={(e) => setGenderFilter(e.target.value)}
-                      className="w-full text-xs bg-white border border-slate-200 rounded p-1.5 outline-hidden focus:ring-2 focus:ring-indigo-500"
+                      className="w-full text-xs bg-white border border-slate-200 rounded p-1.5 outline-hidden focus:ring-2 focus:ring-indigo-500 h-[32px]"
                     >
                       <option value="모두">성별: 모두</option>
                       <option value="남성">성별: 남성</option>
@@ -691,12 +734,26 @@ export default function App() {
                     <select
                       value={ageRangeFilter}
                       onChange={(e) => setAgeRangeFilter(e.target.value)}
-                      className="w-full text-xs bg-white border border-slate-200 rounded p-1.5 outline-hidden focus:ring-2 focus:ring-indigo-500"
+                      className="w-full text-xs bg-white border border-slate-200 rounded p-1.5 outline-hidden focus:ring-2 focus:ring-indigo-500 h-[32px]"
                     >
                       <option value="모두">연령 분포: 모두</option>
                       <option value="70미만">70세 미만</option>
                       <option value="70대">70대 (70~79세)</option>
                       <option value="80이상">80세 이상 할아버지/할머니</option>
+                    </select>
+                  </div>
+                  <div>
+                    <select
+                      value={dongFilter}
+                      onChange={(e) => setDongFilter(e.target.value)}
+                      className="w-full text-xs bg-white border border-slate-200 rounded p-1.5 outline-hidden focus:ring-2 focus:ring-indigo-500 h-[32px]"
+                    >
+                      <option value="모두">거주 동: 모두</option>
+                      <option value="면목 4동">거주 동: 면목 4동</option>
+                      <option value="면목 7동">거주 동: 면목 7동</option>
+                      <option value="면목 5동">거주 동: 면목 5동</option>
+                      <option value="면목 3·8동">거주 동: 면목 3·8동</option>
+                      <option value="기타 동">거주 동: 기타 동</option>
                     </select>
                   </div>
                 </div>
@@ -735,7 +792,12 @@ export default function App() {
                               {res.age}세
                             </td>
                             <td className="p-2.5 text-slate-600 font-mono">{res.phone}</td>
-                            <td className="p-2.5 text-slate-500 max-w-xs truncate">{res.address}</td>
+                            <td className="p-2.5 text-slate-500 max-w-xs truncate">
+                              <span className="inline-block bg-indigo-50 text-indigo-700 text-[10px] px-1 py-0.2 rounded font-medium mr-1">
+                                {res.dong || '기타 동'}
+                              </span>
+                              {res.address}
+                            </td>
                             <td className="p-2.5">
                               <span className="bg-blue-50 text-blue-700 font-bold px-1.5 py-0.5 rounded mr-1">{partCount}</span>
                               <span className="bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.5 rounded">{relCount}</span>
@@ -960,7 +1022,221 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 3: 참여 프로그램 관리 (Program List) */}
+          {/* TAB 3: 프로그램별 참여자 총괄 조회 (Program Group view) */}
+          {activeTab === 'programGroups' && (
+            <div className="bg-white border border-slate-200 rounded shadow-sm p-4" id="view-program-groups-tab">
+              <div className="mb-4 flex flex-wrap justify-between items-center gap-4">
+                <div>
+                  <h2 className="text-sm font-bold text-slate-950 flex items-center gap-1.5">
+                    <CalendarCheck className="w-5 h-5 text-indigo-650" />
+                    프로그램별 주민 참여 현황 일괄 원장
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    개설된 복지관 프로그램 및 일자리별로 참여 중인 주민들을 정렬하여 한눈에 살피고 밀접 수혜 이력들을 파악합니다.
+                  </p>
+                </div>
+              </div>
+
+              {/* 메인 양식: 프로그램 목록 사이드바와 선택된 프로그램의 수혜자 일괄 정보 */}
+              {(() => {
+                // 고유 프로그램명 목록 추출
+                const uniquePrograms: string[] = Array.from(new Set(participations.map(p => p.programName)))
+                  .filter((p): p is string => typeof p === 'string' && !!p)
+                  .sort();
+
+                // 만약 선택된 프로그램이 없거나 현재 목록에 더 이상 존재하지 않으면 첫 번째 프로그램을 자동 선택
+                let currentProg = selectedProgram;
+                if (uniquePrograms.length > 0 && (!currentProg || !uniquePrograms.includes(currentProg))) {
+                  currentProg = uniquePrograms[0];
+                }
+
+                // 프로그램 검색어로 좌측 목록 필터링
+                const filteredProgs = uniquePrograms.filter((p: string) => 
+                  p.toLowerCase().includes(programSearch.toLowerCase())
+                );
+
+                // 현재 프로그램에 참가한 명단 & 수혜기록 details
+                const matchingParticipations = currentProg 
+                  ? participations.filter(p => p.programName === currentProg) 
+                  : [];
+
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start mt-2">
+                    {/* 좌측: 프로그램명 목록 사이드바 */}
+                    <div className="lg:col-span-1 border border-slate-200 rounded-lg bg-slate-50 p-3 self-stretch flex flex-col gap-3 min-h-[400px]">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="프로그램명 검색..."
+                          value={programSearch}
+                          onChange={(e) => setProgramSearch(e.target.value)}
+                          className="w-full text-xs pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded outline-hidden focus:ring-2 focus:ring-indigo-505 h-[32px]"
+                        />
+                        <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto max-h-[500px] space-y-1 pr-1">
+                        {filteredProgs.map(prog => {
+                          const count = participations.filter(p => p.programName === prog).length;
+                          const isSelected = prog === currentProg;
+                          return (
+                            <button
+                              key={prog}
+                              onClick={() => setSelectedProgram(prog)}
+                              className={`w-full text-left text-xs p-2.5 rounded-md flex justify-between items-center transition-all cursor-pointer ${
+                                isSelected 
+                                  ? 'bg-indigo-600 text-white font-semibold shadow-sm' 
+                                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}
+                            >
+                              <span className="truncate mr-2">{prog}</span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                isSelected ? 'bg-white text-indigo-700' : 'bg-slate-200 text-slate-700'
+                              }`}>
+                                {count}명
+                              </span>
+                            </button>
+                          );
+                        })}
+
+                        {filteredProgs.length === 0 && (
+                          <div className="text-center py-8 text-xs text-slate-400 bg-white border border-slate-200 rounded-lg">
+                            검색 결과물도, 개설된 프로그램도 없습니다.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 우측: 해당 프로그램 참여 주민 상세 리스트 */}
+                    <div className="lg:col-span-3 border border-slate-200 rounded-lg p-4 bg-white">
+                      {currentProg ? (
+                        <div className="space-y-4">
+                          {/* 프로그램 요약 */}
+                          <div className="bg-indigo-50/50 border border-indigo-100 rounded-lg p-3 flex flex-wrap justify-between items-center gap-3">
+                            <div>
+                              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                                <span className="inline-block w-2.5 h-2.5 bg-indigo-600 rounded-full animate-pulse"></span>
+                                {currentProg}
+                              </h3>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                현재 본 프로그램에 총 <span className="font-bold text-indigo-700">{matchingParticipations.length}명</span>의 주민이 등록하여 수혜 중입니다.
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setNewParticipation({
+                                  residentId: residents[0]?.id || '',
+                                  programName: currentProg,
+                                  participationDate: new Date().toISOString().split('T')[0],
+                                  durationHours: 2,
+                                  progressStatus: '참여예정',
+                                  notes: ''
+                                });
+                                setShowParticipationModal(true);
+                              }}
+                              className="bg-indigo-650 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              신규 참여자 등록
+                            </button>
+                          </div>
+
+                          {/* 참여 주민 정보 테이블 */}
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                                  <th className="p-2.5">참여자 어르신</th>
+                                  <th className="p-2.5">거주 동</th>
+                                  <th className="p-2.5">수혜일</th>
+                                  <th className="p-2.5">참여시간</th>
+                                  <th className="p-2.5">진행상태</th>
+                                  <th className="p-2.5 max-w-xs">미작성 구체적 특이사항 요약</th>
+                                  <th className="p-2.5 text-right">삭제</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {matchingParticipations.map(p => {
+                                  const res = residents.find(r => r.id === p.residentId);
+                                  return (
+                                    <tr key={p.id} className="hover:bg-slate-50/55 transition-colors">
+                                      <td className="p-2.5">
+                                        {res ? (
+                                          <button 
+                                            onClick={() => { setSelectedResident(res); setActiveTab('residents'); }}
+                                            className="font-bold text-indigo-650 hover:underline text-left cursor-pointer"
+                                          >
+                                            {res.name} <span className="text-[10px] text-slate-400">({res.age}세, {res.gender})</span>
+                                          </button>
+                                        ) : (
+                                          <span className="text-red-400">[탈퇴 주민]</span>
+                                        )}
+                                      </td>
+                                      <td className="p-2.5">
+                                        {res ? (
+                                          <span className="bg-indigo-50/60 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded font-medium">
+                                            {res.dong || '기타 동'}
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-400">-</span>
+                                        )}
+                                      </td>
+                                      <td className="p-2.5 text-slate-500 font-mono">{p.participationDate}</td>
+                                      <td className="p-2.5 text-slate-650 font-mono">{p.durationHours}시간</td>
+                                      <td className="p-2.5">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                          p.progressStatus === '완료' 
+                                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
+                                            : p.progressStatus === '진행중' 
+                                            ? 'bg-blue-50 text-blue-700 border border-blue-200' 
+                                            : p.progressStatus === '참여예정'
+                                            ? 'bg-amber-50/60 text-amber-700 border border-amber-200'
+                                            : 'bg-gray-100 text-gray-700'
+                                        }`}>
+                                          {p.progressStatus}
+                                        </span>
+                                      </td>
+                                      <td className="p-2.5 text-slate-500 max-w-xs truncate" title={p.notes}>
+                                        {p.notes || '-'}
+                                      </td>
+                                      <td className="p-2.5 text-right">
+                                        <button
+                                          onClick={() => handleDeleteParticipation(p.id)}
+                                          className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer p-1 rounded hover:bg-red-50"
+                                          title="수혜 명세 제거"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5 inline" />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+
+                                {matchingParticipations.length === 0 && (
+                                  <tr>
+                                    <td colSpan={7} className="text-center p-8 text-slate-400 bg-slate-50 rounded">
+                                      본 프로그램의 수혜 기록이 존재하지 않습니다.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center p-12 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                          <Layers className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                          <span>생성된 프로그램이 존재하지 않습니다. 먼저 서비스 현황 탭 등에서 신규 수혜 기록을 추가해주세요.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* TAB 4: 참여 프로그램 관리 (Program List) */}
           {activeTab === 'programs' && (
             <div className="bg-white border border-slate-200 rounded shadow-sm p-4" id="view-programs-tab">
               <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
@@ -1060,115 +1336,7 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 4: 스프레드시트 API 연동 가이드 및 저장소  */}
-          {activeTab === 'gasSetup' && (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start" id="view-gas-tab">
-              {/* 우회 원리 설명 및 URL 저장 세션 */}
-              <div className="bg-white border border-slate-200 rounded shadow-sm p-4 space-y-3">
-                <div className="flex items-center gap-2.5 text-slate-950">
-                  <Database className="w-5 h-5 text-indigo-650" />
-                  <h3 className="font-bold text-sm">구글 스프레드시트 풀스택 연동 원리</h3>
-                </div>
-                
-                <div className="text-xs text-slate-600 leading-relaxed space-y-2.5">
-                  <p>
-                    AppSheet의 인원 수 제한은 <b>AppSheet 서버가 중간에 사용자 계정을 검증</b>하기 때문입니다. 
-                    본 솔루션은 구글 스프레드를 DB로 삼되, <b>구글 앱스 스크립트(Google Apps Script, GAS)를 활용해 독립적인 Web App API</b>로 무료 래핑합니다.
-                  </p>
-                  <div className="p-3 bg-slate-50 rounded border border-slate-250 font-medium text-slate-700">
-                    💡 <b>성능 이점:</b> 동시 접속자 수 무제한 무료, 구글 정책상 일일 호출 쿼타 제한(약 20,000회)으로 소규모 복지관이나 사회 단체에서 완벽하게 상시 배포할 수 있습니다.
-                  </div>
-                </div>
 
-                <hr className="border-slate-200" />
-
-                {/* API 주소 연동 폼 */}
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900 mb-2">📡 구글 웹앱 데몬 URL 등록</h4>
-                  <div className="space-y-3">
-                    <input
-                      type="text"
-                      placeholder="https://script.google.com/macros/s/.../exec"
-                      defaultValue={gasConfig.url}
-                      onBlur={(e) => handleSaveGasConfig(e.target.value, gasConfig.isEnabled)}
-                      className="w-full text-xs p-2.5 border border-slate-200 rounded font-mono outline-hidden focus:ring-2 focus:ring-indigo-500"
-                    />
-                    
-                    <div className="flex items-center justify-between">
-                      <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={gasConfig.isEnabled}
-                          onChange={(e) => handleSaveGasConfig(gasConfig.url, e.target.checked)}
-                          className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
-                        />
-                        <span>이 구글 시트 웹앱 API 연동을 활성화합니다.</span>
-                      </label>
-                      
-                      {syncStatus === 'success' && (
-                        <span className="text-[10px] text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                          ✓ 연동검증 성공
-                        </span>
-                      )}
-                      {syncStatus === 'error' && (
-                        <span className="text-[10px] text-red-650 font-bold bg-red-50 px-2 py-0.5 rounded border border-red-200" title={syncError || ''}>
-                          ✗ 연동응답 확인 실패
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-slate-50 rounded border border-slate-200 space-y-2">
-                  <div className="text-xs font-bold text-slate-900">사용 순서 가이드</div>
-                  <ol className="text-[11px] text-slate-500 space-y-1 list-decimal list-inside leading-relaxed">
-                    <li>우측에 준비된 <b>Apps Script 코드 복사</b></li>
-                    <li>구글 스프레드시트 개설 후 <b>[확장 프로그램] → [Apps Script]</b> 이동</li>
-                    <li>복사한 코드를 교체 장착하고 디스크 모양 <b>[저장]</b> 클릭</li>
-                    <li>우측 상단 <b>[배포] → [새 배포] → [웹 앱]</b> 지정</li>
-                    <li>액세스 사용자를 반드시 <b>[모든 사람(Anyone)]</b>으로 설정해 배포</li>
-                    <li>생성된 URL을 위 입력단에 삽입 후 연동 활성화 체크!</li>
-                  </ol>
-                </div>
-              </div>
-
-              {/* Apps Script code.gs 소스 가상 모니터링 */}
-              <div className="bg-white border border-slate-200 rounded shadow-sm p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-1.5 font-bold text-slate-950">
-                    <UserCheck className="w-5 h-5 text-indigo-600" />
-                    <h4>복사 전용 code.gs 소스코드</h4>
-                  </div>
-                  <button
-                    onClick={handleCopyCode}
-                    className="text-xs font-semibold bg-indigo-50 text-indigo-800 border border-indigo-200 hover:bg-indigo-100 px-3 py-1.5 rounded flex items-center gap-1 transition-all cursor-pointer"
-                  >
-                    {isCopied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="text-emerald-600">복사 완료!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>전체 코드 복사하기</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <p className="text-xs text-slate-400">
-                  아래의 코드는 주민 데이터 삭제 시 관계망에서 연결된 이웃 관계선도 cascade 처리하여 무결성을 유지하는 최적화된 자동구축 코드입니다.
-                </p>
-
-                <div className="bg-slate-950 rounded p-3 overflow-hidden relative border border-slate-800">
-                  <pre className="text-[10px] text-slate-300 font-mono overflow-y-auto max-h-[360px] scrollbar-thin leading-relaxed select-all">
-                    {GOOGLE_APPS_SCRIPT_CODE}
-                  </pre>
-                </div>
-              </div>
-            </div>
-          )}
         </section>
       </main>
 
@@ -1237,15 +1405,56 @@ export default function App() {
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">실 거주지 상세주소</label>
-                <input
-                  type="text"
-                  value={editingResident.address || ''}
-                  onChange={(e) => setEditingResident({ ...editingResident, address: e.target.value })}
-                  className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
-                />
+               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">거주 동 (필수)</label>
+                  <select
+                    value={editingResident.dong || '면목 4동'}
+                    onChange={(e) => setEditingResident({ ...editingResident, dong: e.target.value as any })}
+                    className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500 h-[34px]"
+                  >
+                    <option value="면목 4동">면목 4동</option>
+                    <option value="면목 7동">면목 7동</option>
+                    <option value="면목 5동">면목 5동</option>
+                    <option value="면목 3·8동">면목 3·8동</option>
+                    <option value="기타 동">기타 동</option>
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">실 거주지 상세주소</label>
+                  <input
+                    type="text"
+                    value={editingResident.address || ''}
+                    onChange={(e) => setEditingResident({ ...editingResident, address: e.target.value })}
+                    className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500 h-[34px]"
+                  />
+                </div>
               </div>
+
+              {!editingResident.id && (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">초기 참여 복지관 프로그램 (동시 등록)</label>
+                  <input
+                    type="text"
+                    list="program-suggestions-modal"
+                    placeholder="예: 노래교실, 밑반찬 배달 등 프로그램명 자유 기입 또는 더블클릭 선택"
+                    value={editingResident.initialProgram || ''}
+                    onChange={(e) => setEditingResident({ ...editingResident, initialProgram: e.target.value })}
+                    className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500 h-[34px]"
+                  />
+                  <datalist id="program-suggestions-modal">
+                    {Array.from(new Set(participations.map(p => p.programName)))
+                      .filter((p): p is string => typeof p === 'string' && !!p)
+                      .sort()
+                      .map((prog) => (
+                        <option key={prog} value={prog} />
+                      ))}
+                  </datalist>
+                  <p className="text-[10px] text-slate-450 mt-1">
+                    * 작성 완료 시 본 어르신의 첫 수혜 프로그램 가입 이력이 즉시 신설 동기화됩니다.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">사례관리 의견 요약 (진단)</label>
@@ -1502,14 +1711,7 @@ export default function App() {
             <Info className="w-3.5 h-3.5 text-indigo-650" />
             구글 드라이브 앱스 스크립트 기반 동작 (CORS-Compliant CORS Tunneling)
           </span>
-          <span>·</span>
-          <a 
-            href="#" 
-            onClick={(e) => { e.preventDefault(); setActiveTab('gasSetup'); }} 
-            className="text-indigo-650 font-semibold hover:underline"
-          >
-            Apps Script 배포 방법 다시 보기 →
-          </a>
+
         </div>
       </footer>
     </div>
