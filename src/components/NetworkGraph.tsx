@@ -509,7 +509,7 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
       </div>
 
       {/* 우측 D3 메인 컨버스 */}
-      <div className="lg:col-span-3 bg-slate-50 border border-slate-205 rounded flex flex-col relative overflow-hidden shadow-sm" ref={containerRef}>
+      <div className="lg:col-span-3 bg-slate-50 border border-slate-205 rounded flex flex-col relative overflow-hidden shadow-sm">
         {/* 상단 핀 컨트롤바 */}
         <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap justify-between items-center gap-2 pointer-events-none">
           <div className="bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded border border-slate-200 text-[10px] font-bold text-slate-800 flex items-center gap-1.5 shadow pointer-events-auto">
@@ -539,12 +539,14 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
         ></div>
 
         {/* 실제 SVG 돔 요소 */}
-        <svg
-          ref={svgRef}
-          width={dimensions.width}
-          height={dimensions.height}
-          className="w-full h-full flex-1"
-        ></svg>
+        <div ref={containerRef} className="relative flex-1 w-full min-h-[450px] lg:min-h-0 overflow-hidden">
+          <svg
+            ref={svgRef}
+            width={dimensions.width}
+            height={dimensions.height}
+            className="absolute inset-0 w-full h-full"
+          ></svg>
+        </div>
 
         {/* 하단 단축 조작 팁 정보바 */}
         <div className="bg-white border-t border-slate-200 px-4 py-2 text-[10px] text-slate-500 flex justify-between items-center">
