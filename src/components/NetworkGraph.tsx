@@ -149,9 +149,11 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
         .id(d => d.id)
         .distance(120)
       )
-      .force('charge', d3.forceManyBody().strength(-280)) // 노드 간 척력
+      .force('charge', d3.forceManyBody<GraphNode>().strength(d => d.isIsolated ? -80 : -280)) // 고립 노드는 척력을 아늑히 줄임
       .force('center', d3.forceCenter(width / 2, height / 2)) // 중앙 정렬력
-      .force('collision', d3.forceCollide().radius(45)); // 충돌 방지 반지름
+      .force('collision', d3.forceCollide().radius(45)) // 충돌 방지 반지름
+      .force('x', d3.forceX<GraphNode>(width / 2).strength(d => d.isIsolated ? 0.18 : 0.03)) // 고립 주민은 중앙 부근으로 은은하게 견인
+      .force('y', d3.forceY<GraphNode>(height / 2).strength(d => d.isIsolated ? 0.18 : 0.03));
 
     // 5. 관계선 그리기
     const link = gContainer.append('g')
