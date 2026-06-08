@@ -1,0 +1,6 @@
+{
+  "name": "주민 정보 및 관계망 관리기",
+  "description": "구글 스프레드시트와 구글 앱스 스크립트(GAS)를 연동하여 AppSheet의 10인 제한 없이 주민 인적사항, 프로그램 참여 이력, 소셜 네트워크 이웃 관계망을 무제한 무료로 기록하고 D3.js로 분석하는 시스템",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
