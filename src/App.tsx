@@ -153,6 +153,7 @@ export default function App() {
   const [showResidentModal, setShowResidentModal] = useState<boolean>(false);
   const [showParticipationModal, setShowParticipationModal] = useState<boolean>(false);
   const [showRelationshipModal, setShowRelationshipModal] = useState<boolean>(false);
+  const [editingRelationshipId, setEditingRelationshipId] = useState<string | null>(null);
 
   // 폼 입력용 임시 상태
   const [editingResident, setEditingResident] = useState<Partial<Resident & { 
@@ -596,7 +597,7 @@ export default function App() {
     }
   };
 
-  // 관계망 추가
+  // 관계망 추가 및 수정
   const handleAddRelationshipSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRelationship.sourceId || !newRelationship.targetId) return;
@@ -605,10 +606,12 @@ export default function App() {
       return;
     }
 
-    // 중복 관계선이 존재하는지 검증
+    // 중복 관계선이 존재하는지 검증 (자기 자신 이외)
     const alreadyConnected = relationships.some(rel => 
-      (rel.sourceId === newRelationship.sourceId && rel.targetId === newRelationship.targetId) ||
-      (rel.sourceId === newRelationship.targetId && rel.targetId === newRelationship.sourceId)
+      rel.id !== editingRelationshipId && (
+        (rel.sourceId === newRelationship.sourceId && rel.targetId === newRelationship.targetId) ||
+        (rel.sourceId === newRelationship.targetId && rel.targetId === newRelationship.sourceId)
+      )
     );
 
     if (alreadyConnected) {
@@ -616,23 +619,41 @@ export default function App() {
       return;
     }
 
-    const relationshipId = 'RL_' + Date.now();
-    const item: Relationship = {
-      id: relationshipId,
-      sourceId: newRelationship.sourceId,
-      targetId: newRelationship.targetId,
-      relationType: (newRelationship.relationType || '이웃') as '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타',
-      strength: Number(newRelationship.strength || 3),
-      notes: newRelationship.notes || ''
-    };
+    let updatedRelationships: Relationship[] = [];
+    let item: Relationship;
 
-    const updatedRelationships = [item, ...relationships];
+    if (editingRelationshipId) {
+      // 수정 모드
+      item = {
+        id: editingRelationshipId,
+        sourceId: newRelationship.sourceId,
+        targetId: newRelationship.targetId,
+        relationType: (newRelationship.relationType || '이웃') as '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타',
+        strength: Number(newRelationship.strength || 3),
+        notes: newRelationship.notes || ''
+      };
+      updatedRelationships = relationships.map(rel => rel.id === editingRelationshipId ? item : rel);
+    } else {
+      // 신규 추가 모드
+      const relationshipId = 'RL_' + Date.now();
+      item = {
+        id: relationshipId,
+        sourceId: newRelationship.sourceId,
+        targetId: newRelationship.targetId,
+        relationType: (newRelationship.relationType || '이웃') as '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타',
+        strength: Number(newRelationship.strength || 3),
+        notes: newRelationship.notes || ''
+      };
+      updatedRelationships = [item, ...relationships];
+    }
+
     setRelationships(updatedRelationships);
     saveToLocalStorage(residents, participations, updatedRelationships);
 
     await postToGAS('saveRelationship', item);
 
     setShowRelationshipModal(false);
+    setEditingRelationshipId(null);
     setNewRelationship({
       sourceId: '',
       targetId: '',
@@ -1242,13 +1263,33 @@ export default function App() {
                                 </div>
                                 <div className="text-[10px] text-slate-500 mt-0.5">상세: {rel.notes || '상태교류 일지 미작성'}</div>
                               </div>
-                              <button
-                                onClick={() => handleDeleteRelationship(rel.id)}
-                                className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer p-0.5"
-                                title="관계 끊기"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
+                              <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={() => {
+                                    setNewRelationship({
+                                      id: rel.id,
+                                      sourceId: rel.sourceId,
+                                      targetId: rel.targetId,
+                                      relationType: rel.relationType,
+                                      strength: rel.strength,
+                                      notes: rel.notes
+                                    });
+                                    setEditingRelationshipId(rel.id);
+                                    setShowRelationshipModal(true);
+                                  }}
+                                  className="text-slate-400 hover:text-indigo-600 cursor-pointer p-0.5"
+                                  title="관계 수정 (친밀도 등)"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteRelationship(rel.id)}
+                                  className="text-slate-400 hover:text-red-500 cursor-pointer p-0.5"
+                                  title="관계 끊기"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                           );
                         })}
@@ -2037,19 +2078,33 @@ export default function App() {
         </div>
       )}
 
-      {/* 3. 소셜 관계선 추가 입력 모달 */}
+      {/* 3. 소셜 관계선 추가 및 수정 입력 모달 */}
       {showRelationshipModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded border border-slate-300 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl p-5 relative">
             <button
-              onClick={() => setShowRelationshipModal(false)}
+              onClick={() => {
+                setShowRelationshipModal(false);
+                setEditingRelationshipId(null);
+                setNewRelationship({
+                  sourceId: '',
+                  targetId: '',
+                  relationType: '이웃',
+                  strength: 3,
+                  notes: ''
+                });
+              }}
               className="absolute top-4 right-4 p-1 hover:bg-slate-100 text-slate-400 rounded transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
 
-            <h3 className="text-sm font-bold text-slate-950 mb-1">주민 연계망 연결고리 생성</h3>
-            <p className="text-xs text-slate-400 mb-3">어르신들끼리 혹은 전담 요양보호사/리더관 간 활성 지형 데이터를 매핑합니다.</p>
+            <h3 className="text-sm font-bold text-slate-950 mb-1">
+              {editingRelationshipId ? '주민 연계망 연결고리 수정' : '주민 연계망 연결고리 생성'}
+            </h3>
+            <p className="text-xs text-slate-400 mb-3">
+              {editingRelationshipId ? '지정된 두 어르신 간의 소셜 지형 관계도 정밀 분류 및 접밀 강도를 편집합니다.' : '어르신들끼리 혹은 전담 요양보호사/리더관 간 활성 지형 데이터를 매핑합니다.'}
+            </p>
 
             <form onSubmit={handleAddRelationshipSubmit} className="space-y-3 text-xs">
               <div>
@@ -2127,7 +2182,17 @@ export default function App() {
               <div className="flex gap-2 justify-end pt-2 border-t border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setShowRelationshipModal(false)}
+                  onClick={() => {
+                    setShowRelationshipModal(false);
+                    setEditingRelationshipId(null);
+                    setNewRelationship({
+                      sourceId: '',
+                      targetId: '',
+                      relationType: '이웃',
+                      strength: 3,
+                      notes: ''
+                    });
+                  }}
                   className="px-3.5 py-1.5 border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 rounded cursor-pointer text-xs"
                 >
                   취소
@@ -2136,7 +2201,7 @@ export default function App() {
                   type="submit"
                   className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 font-bold text-white rounded cursor-pointer text-xs"
                 >
-                  연결 접지
+                  {editingRelationshipId ? '관계 수정 완료' : '연결 접지'}
                 </button>
               </div>
             </form>
