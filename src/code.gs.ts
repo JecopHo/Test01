@@ -159,7 +159,7 @@ function getSheetData(sheetName) {
     }
     if (!isEmpty) {
       // 숫자 및 날짜 필드 수동 타입 조절
-      if (item.age) item.age = Number(item.age);
+      if (item.age) item.age = isNaN(Number(item.age)) ? item.age : Number(item.age);
       if (item.durationHours) item.durationHours = Number(item.durationHours);
       if (item.strength) item.strength = Number(item.strength);
       

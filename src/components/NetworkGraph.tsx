@@ -22,6 +22,7 @@ interface GraphNode extends d3.SimulationNodeDatum {
   age: number;
   isIsolated: boolean;
   notes: string;
+  disabilityType?: string;
 }
 
 interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
@@ -93,7 +94,8 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
         gender: res.gender,
         age: res.age,
         notes: res.notes,
-        isIsolated: connectionCount === 0
+        isIsolated: connectionCount === 0,
+        disabilityType: res.disabilityType
       } as GraphNode;
     });
   }, [residents, filteredLinks]);
@@ -162,18 +164,23 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
       .data(linksCopy)
       .enter().append('line')
       .attr('stroke', d => {
-        switch (d.relationType) {
-          case '이웃': return '#10b981'; // 초록
-          case '돌봄제공자': return '#3b82f6'; // 파랑
-          case '친척': return '#f59e0b'; // 오렌지
-          case '친구': return '#8b5cf6'; // 보라
-          case '지인': return '#ec4899'; // 핑크
-          default: return '#9ca3af'; // 그레이
+        if (d.strength >= 3) {
+          return '#10b981'; // 보통 이상: 초록색
+        } else {
+          return '#ef4444'; // 보통 미만: 붉은색
         }
       })
       .attr('stroke-opacity', 0.8)
-      .attr('stroke-width', d => d.strength * 1.5 + 1) // 강도에 비례한 선 두께
-      .attr('stroke-dasharray', d => d.relationType === '돌봄제공자' ? '4,4' : 'none')
+      .attr('stroke-width', d => {
+        if (d.strength >= 3) {
+          // 3점 이상: 점수가 높아질수록 비례하여 초록색 실선이 굵어짐 (3점: 2px, 4점: 3.5px, 5점: 5px)
+          return (d.strength - 3) * 1.5 + 2;
+        } else {
+          // 3점 미만: 점수가 낮아질수록 비례하여 붉은색 점선이 굵어짐 (2점: 2.5px, 1점: 4.5px)
+          return (3 - d.strength) * 2 + 0.5;
+        }
+      })
+      .attr('stroke-dasharray', d => d.strength >= 3 ? 'none' : '4,4')
       .style('cursor', 'pointer');
 
     // 관계선 마우스 오버용 보이지 않는 두꺼운 인터랙션 라인 추가
@@ -226,7 +233,7 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
         .html(`
           <div class="px-3 py-2 text-xs bg-white text-gray-800 border border-gray-200 rounded shadow-xl max-w-xs leading-relaxed">
             <p class="font-bold text-gray-900 text-sm flex items-center gap-1.5">
-              ${d.name} <span class="text-xs text-gray-500 font-normal">(${d.gender}, ${d.age}세)</span>
+              ${d.name} <span class="text-xs text-gray-500 font-normal">(${d.gender}, ${typeof d.age === 'number' || !isNaN(Number(d.age)) ? `${d.age}세` : d.age})</span>
               ${d.isIsolated ? '<span class="bg-red-100 text-red-700 text-[10px] px-1 rounded font-normal">고립선별</span>' : ''}
             </p>
             <p class="mt-1 text-gray-600 line-clamp-3 bg-gray-50 p-1.5 rounded text-[11px]">${d.notes || '기록된 복지 특이조건이 없습니다.'}</p>
@@ -254,7 +261,7 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
           <div class="px-3 py-2 text-xs bg-gray-900 border border-semibold text-white rounded shadow-lg max-w-xs">
             <p class="font-bold flex items-center gap-1">
               <span class="w-2 h-2 rounded inline-block" style="background-color: ${
-                d.relationType === '이웃' ? '#10b981' : d.relationType === '돌봄제공자' ? '#3b82f6' : '#8b5cf6'
+                d.relationType === '이웃' ? '#10b981' : d.relationType === '돌봄제공자' ? '#3b82f6' : d.relationType === '공공기관' ? '#0d9488' : '#8b5cf6'
               }"></span>
               ${sourceNode} ⇆ ${targetNode} [${d.relationType}]
             </p>
@@ -415,31 +422,29 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
     node.append('circle')
       .attr('r', d => d.id === highlightedNodeId ? 25 : 20)
       .attr('fill', d => {
-        if (d.isIsolated) return '#fef2f2'; // 고립자는 여린 연빨강
-        return d.gender === '남성' ? '#f0f9ff' : '#fff5f5'; // 남성은 마린, 여성은 로즈
+        return d.gender === '남성' ? '#3b82f6' : '#ef4444'; // 남성은 파란색, 여성은 빨간색
       })
       .attr('stroke', d => {
-        if (d.isIsolated) return '#ef4444'; // 고립경고 빨간색
-        if (matchedNodeIds.includes(d.id)) return '#f59e0b'; // 검색 노드 골드색상
-        return d.gender === '남성' ? '#38bdf8' : '#fb7185';
+        if (d.disabilityType && d.disabilityType !== '없음') return '#6b21a8'; // 장애가 있으신 경우 짙은 보라색 테두리
+        if (d.isIsolated) return '#facc15'; // 고립 시에는 노란색(경고/요주의) 또는 다른 대비색으로 강조 가능하나, 기본적으로 빨간색 테두리로 유지 또는 도드라지게 처리
+        if (matchedNodeIds.includes(d.id)) return '#ffffff'; // 검색 노드 흰색 테두리 조합
+        return d.gender === '남성' ? '#1d4ed8' : '#991b1b';
       })
       .attr('stroke-width', d => {
+        if (d.disabilityType && d.disabilityType !== '없음') return 4.0; // 장애가 있으신 경우 4.0px 두께
         if (d.isIsolated) return 3.5;
         if (matchedNodeIds.includes(d.id)) return 4;
         return 2;
       })
       .attr('class', d => d.isIsolated ? 'animate-pulse' : '');
 
-    // 8. 주민 이름 이니셜 삽입
+    // 8. 주민 이니셜 삽입 (흰색 텍스트로 시인성 대폭 상향)
     node.append('text')
       .attr('text-anchor', 'middle')
       .attr('dy', '.3em')
       .attr('font-size', '10px')
       .attr('font-weight', 'bold')
-      .attr('fill', d => {
-        if (d.isIsolated) return '#991b1b';
-        return d.gender === '남성' ? '#0369a1' : '#9f1239';
-      })
+      .attr('fill', '#ffffff')
       .text(d => d.name.substring(0, 3));
 
     // 9. 노드 바로 아래에 세부 데이터 레이블
@@ -449,7 +454,7 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
       .attr('font-size', '11px')
       .attr('font-weight', '500')
       .attr('fill', '#374151')
-      .text(d => `${d.name} (${d.age}세)`);
+      .text(d => `${d.name} (${typeof d.age === 'number' || !isNaN(Number(d.age)) ? `${d.age}세` : d.age})`);
 
     // 시뮬레이션 매프레임 갱신 리스너
     simulation.on('tick', () => {
@@ -514,7 +519,7 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
   }, [graphNodes, filteredLinks, dimensions, matchedNodeIds, highlightedNodeId, residents, onSelectResident]);
 
   // 가용 관계 필터 모음
-  const relationTypes = ['모두', '이웃', '친척', '친구', '지인', '돌봄제공자', '기타'];
+  const relationTypes = ['모두', '이웃', '친척', '친구', '지인', '돌봄제공자', '공공기관', '기타'];
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full min-h-[600px]" id="network-graph-view">
@@ -611,7 +616,7 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
                     className="w-full text-left p-2 rounded border border-red-150 bg-red-50/50 hover:bg-red-50 transition-colors flex items-center justify-between cursor-pointer"
                   >
                     <div>
-                      <div className="text-[11px] font-bold text-slate-900">{r.name} ({r.age}세)</div>
+                      <div className="text-[11px] font-bold text-slate-900">{r.name} ({typeof r.age === 'number' || !isNaN(Number(r.age)) ? `${r.age}세` : r.age})</div>
                       <div className="text-[10px] text-red-700 font-medium mt-0.5 line-clamp-1">{r.notes || '연결 자원이 전혀 수집되지 않음'}</div>
                     </div>
                     <span className="text-[10px] uppercase font-bold text-red-650 bg-white border border-red-200 px-1.5 py-0.5 rounded">

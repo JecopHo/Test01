@@ -33,6 +33,90 @@ import { MOCK_RESIDENTS, MOCK_PARTICIPATIONS, MOCK_RELATIONSHIPS } from './mockD
 import { GOOGLE_APPS_SCRIPT_CODE } from './code.gs';
 import NetworkGraph from './components/NetworkGraph';
 
+// --- 생년월일 및 연령 계산 파서 시스템 ---
+export const getResidentAgeNumber = (ageVal: string | number | undefined): number => {
+  if (ageVal === undefined || ageVal === null) return 70;
+  if (typeof ageVal === 'number') return ageVal;
+  const match = ageVal.match(/\((\d+)\)/);
+  if (match) {
+    return parseInt(match[1], 10);
+  }
+  const ageOnly = parseInt(ageVal, 10);
+  return isNaN(ageOnly) ? 70 : ageOnly;
+};
+
+export const parseResidentAgeInput = (val: string | number | undefined): { displayAge: string | number; numericAge: number } => {
+  if (val === undefined || val === null) {
+    return { displayAge: 70, numericAge: 70 };
+  }
+  const trimmed = String(val).trim();
+  if (!trimmed) {
+    return { displayAge: 70, numericAge: 70 };
+  }
+
+  // "94.01.01(32)" 또는 괄호 포함 포맷인 경우 그대로 사용
+  if (trimmed.includes('(') && trimmed.includes(')')) {
+    const match = trimmed.match(/\((\d+)\)/);
+    const ageNum = match ? parseInt(match[1], 10) : 70;
+    return { displayAge: trimmed, numericAge: ageNum };
+  }
+
+  // 단순히 숫자만 기입한 사례 검출 (예: "72" 혹은 "72세")
+  const cleanNumber = trimmed.replace(/세$/, '').trim();
+  if (/^\d{1,3}$/.test(cleanNumber)) {
+    const num = parseInt(cleanNumber, 10);
+    return { displayAge: num, numericAge: num };
+  }
+
+  // 생년월일 해석 시도 (예: 94.01.01, 1994.01.01, 940101, 1994-01-01 등)
+  let normalized = trimmed.replace(/[-/]/g, '.');
+  if (/^\d{6}$/.test(normalized)) {
+    normalized = normalized.slice(0, 2) + '.' + normalized.slice(2, 4) + '.' + normalized.slice(4, 6);
+  } else if (/^\d{8}$/.test(normalized)) {
+    normalized = normalized.slice(0, 4) + '.' + normalized.slice(4, 6) + '.' + normalized.slice(6, 8);
+  }
+
+  const parts = normalized.split('.');
+  if (parts.length < 3) {
+    return { displayAge: trimmed, numericAge: 70 };
+  }
+
+  let yearStr = parts[0].trim();
+  const monthStr = parts[1].trim();
+  const dayStr = parts[2].trim();
+
+  let year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  const day = parseInt(dayStr, 10);
+
+  if (isNaN(year) || isNaN(month) || isNaN(day)) {
+    return { displayAge: trimmed, numericAge: 70 };
+  }
+
+  const displayYearStr = yearStr;
+  if (yearStr.length === 2) {
+    if (year >= 26) {
+      year += 1900;
+    } else {
+      year += 2000;
+    }
+  }
+
+  // 만나이 계산 기준년월일 (2026-06-09 기준)
+  const today = new Date(2026, 5, 9);
+  let age = today.getFullYear() - year;
+  const m = today.getMonth() - (month - 1);
+  if (m < 0 || (m === 0 && today.getDate() < day)) {
+    age--;
+  }
+
+  const formattedBirthdate = `${displayYearStr}.${monthStr.padStart(2, '0')}.${dayStr.padStart(2, '0')}`;
+  return {
+    displayAge: `${formattedBirthdate}(${age})`,
+    numericAge: age
+  };
+};
+
 export default function App() {
   // --- 메인 상태 ---
   const [residents, setResidents] = useState<Resident[]>([]);
@@ -56,6 +140,8 @@ export default function App() {
   // 프로그램별 분할 전용 상태
   const [selectedProgram, setSelectedProgram] = useState<string>('');
   const [programSearch, setProgramSearch] = useState<string>('');
+  const [isRenamingProgram, setIsRenamingProgram] = useState<boolean>(false);
+  const [renameInputValue, setRenameInputValue] = useState<string>('');
 
   // 모달 제어 상태
   const [showResidentModal, setShowResidentModal] = useState<boolean>(false);
@@ -63,7 +149,13 @@ export default function App() {
   const [showRelationshipModal, setShowRelationshipModal] = useState<boolean>(false);
 
   // 폼 입력용 임시 상태
-  const [editingResident, setEditingResident] = useState<Partial<Resident & { initialProgram?: string }> | null>(null);
+  const [editingResident, setEditingResident] = useState<Partial<Resident & { 
+    initialProgram?: string;
+    initialRelationTargetId?: string;
+    initialRelationType?: '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타';
+    initialRelationStrength?: number;
+    initialRelationNotes?: string;
+  }> | null>(null);
   const [newParticipation, setNewParticipation] = useState<Partial<Participation>>({
     programName: '',
     participationDate: new Date().toISOString().split('T')[0],
@@ -233,19 +325,24 @@ export default function App() {
     const isNew = !editingResident.id;
     const residentId = editingResident.id || 'R_' + Date.now();
     
+    const parsedAgeInfo = parseResidentAgeInput(editingResident.age);
+    
     const targetResident: Resident = {
       id: residentId,
       name: editingResident.name,
       gender: (editingResident.gender || '여성') as '남성' | '여성',
-      age: Number(editingResident.age || 70),
+      age: parsedAgeInfo.displayAge,
       phone: editingResident.phone || '010-0000-0000',
       address: editingResident.address || '미정',
       dong: editingResident.dong || '기타 동',
       notes: editingResident.notes || '',
-      registeredAt: editingResident.registeredAt || new Date().toISOString().split('T')[0]
+      registeredAt: editingResident.registeredAt || new Date().toISOString().split('T')[0],
+      disabilityType: editingResident.disabilityType || '없음',
+      disabilityDetails: editingResident.disabilityDetails || '',
     };
 
     let updatedParticipations = [...participations];
+    let updatedRelationships = [...relationships];
 
     if (isNew) {
       updatedResidents.unshift(targetResident);
@@ -268,12 +365,30 @@ export default function App() {
         // 구글 시트 연동 비동기 실행 (에러 핸들러 기본 내장됨)
         await postToGAS('addParticipation', newPart);
       }
+
+      // 혹시 신규 등록 단계에서 지역 이웃 관계망을 기입했을 시, 연계 생성
+      if (editingResident.initialRelationTargetId && editingResident.initialRelationTargetId.trim() !== '') {
+        const relationshipId = 'RL_' + Date.now();
+        const newRel: Relationship = {
+          id: relationshipId,
+          sourceId: residentId,
+          targetId: editingResident.initialRelationTargetId,
+          relationType: (editingResident.initialRelationType || '이웃') as '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타',
+          strength: Number(editingResident.initialRelationStrength || 3),
+          notes: editingResident.initialRelationNotes || '주민 신규 편적 시 자동 등록된 이웃 관계망'
+        };
+        updatedRelationships = [newRel, ...relationships];
+        setRelationships(updatedRelationships);
+
+        // 구글 시트 연동 비동기 실행
+        await postToGAS('saveRelationship', newRel);
+      }
     } else {
       updatedResidents = updatedResidents.map(r => r.id === residentId ? targetResident : r);
     }
 
     setResidents(updatedResidents);
-    saveToLocalStorage(updatedResidents, updatedParticipations, relationships);
+    saveToLocalStorage(updatedResidents, updatedParticipations, updatedRelationships);
 
     // 상세 프로필 뷰 동기화
     if (selectedResident && selectedResident.id === residentId) {
@@ -320,12 +435,13 @@ export default function App() {
     }
   };
 
-  // 참여이력 추가
+  // 참여이력 추가 및 수정
   const handleAddParticipationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newParticipation.residentId || !newParticipation.programName) return;
 
-    const participationId = 'P_' + Date.now();
+    const isEdit = !!newParticipation.id;
+    const participationId = newParticipation.id || 'P_' + Date.now();
     const item: Participation = {
       id: participationId,
       residentId: newParticipation.residentId,
@@ -336,7 +452,12 @@ export default function App() {
       notes: newParticipation.notes || ''
     };
 
-    const updatedParticipations = [item, ...participations];
+    let updatedParticipations: Participation[];
+    if (isEdit) {
+      updatedParticipations = participations.map(p => p.id === participationId ? item : p);
+    } else {
+      updatedParticipations = [item, ...participations];
+    }
     setParticipations(updatedParticipations);
     saveToLocalStorage(residents, updatedParticipations, relationships);
 
@@ -350,6 +471,33 @@ export default function App() {
       progressStatus: '참여예정',
       notes: ''
     });
+
+    if (gasConfig.isEnabled && gasConfig.url) {
+      setTimeout(() => fetchFromGAS(gasConfig.url), 1000);
+    }
+  };
+
+  // 프로그램 대표명 일괄 수정
+  const handleRenameProgram = async (oldName: string, newName: string) => {
+    if (!newName || newName.trim() === '' || newName === oldName) {
+      setIsRenamingProgram(false);
+      return;
+    }
+
+    const trimmedNewName = newName.trim();
+    
+    // update state
+    const updated = participations.map(p => p.programName === oldName ? { ...p, programName: trimmedNewName } : p);
+    setParticipations(updated);
+    saveToLocalStorage(residents, updated, relationships);
+    setSelectedProgram(trimmedNewName);
+    setIsRenamingProgram(false);
+
+    // Call API for each updated participation
+    const affected = participations.filter(p => p.programName === oldName);
+    for (const p of affected) {
+      await postToGAS('saveParticipation', { ...p, programName: trimmedNewName });
+    }
 
     if (gasConfig.isEnabled && gasConfig.url) {
       setTimeout(() => fetchFromGAS(gasConfig.url), 1000);
@@ -396,7 +544,7 @@ export default function App() {
       id: relationshipId,
       sourceId: newRelationship.sourceId,
       targetId: newRelationship.targetId,
-      relationType: (newRelationship.relationType || '이웃') as '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '기타',
+      relationType: (newRelationship.relationType || '이웃') as '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타',
       strength: Number(newRelationship.strength || 3),
       notes: newRelationship.notes || ''
     };
@@ -445,9 +593,10 @@ export default function App() {
       const matchGender = genderFilter === '모두' || res.gender === genderFilter;
       
       let matchAge = true;
-      if (ageRangeFilter === '70미만') matchAge = res.age < 70;
-      else if (ageRangeFilter === '70대') matchAge = res.age >= 70 && res.age < 80;
-      else if (ageRangeFilter === '80이상') matchAge = res.age >= 80;
+      const numAge = getResidentAgeNumber(res.age);
+      if (ageRangeFilter === '70미만') matchAge = numAge < 70;
+      else if (ageRangeFilter === '70대') matchAge = numAge >= 70 && numAge < 80;
+      else if (ageRangeFilter === '80이상') matchAge = numAge >= 80;
 
       const matchDong = dongFilter === '모두' || (res.dong || '기타 동') === dongFilter;
 
@@ -696,7 +845,13 @@ export default function App() {
                         dong: '면목 4동',
                         notes: '',
                         initialProgram: '',
-                        registeredAt: new Date().toISOString().split('T')[0]
+                        initialRelationTargetId: '',
+                        initialRelationType: '이웃',
+                        initialRelationStrength: 3,
+                        initialRelationNotes: '',
+                        registeredAt: new Date().toISOString().split('T')[0],
+                        disabilityType: '없음',
+                        disabilityDetails: ''
                       });
                       setShowResidentModal(true);
                     }}
@@ -789,7 +944,7 @@ export default function App() {
                               }`}>
                                 {res.gender}
                               </span>
-                              {res.age}세
+                              {typeof res.age === 'number' || !isNaN(Number(res.age)) ? `${res.age}세` : res.age}
                             </td>
                             <td className="p-2.5 text-slate-600 font-mono">{res.phone}</td>
                             <td className="p-2.5 text-slate-500 max-w-xs truncate">
@@ -809,7 +964,11 @@ export default function App() {
                               <div className="flex gap-2 justify-end" onClick={(e) => e.stopPropagation()}>
                                 <button
                                   onClick={() => {
-                                    setEditingResident(res);
+                                    setEditingResident({
+                                      ...res,
+                                      disabilityType: res.disabilityType || '없음',
+                                      disabilityDetails: res.disabilityDetails || ''
+                                    });
                                     setShowResidentModal(true);
                                   }}
                                   className="p-1 px-1.5 border border-slate-200 hover:border-indigo-500 rounded bg-white hover:text-indigo-600 transition-colors cursor-pointer"
@@ -856,7 +1015,7 @@ export default function App() {
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                       selectedResident.gender === '남성' ? 'bg-cyan-50 text-cyan-700 border border-cyan-150' : 'bg-rose-50 text-rose-700 border border-rose-150'
                     }`}>
-                      {selectedResident.gender} (만 {selectedResident.age}세)
+                      {selectedResident.gender} ({typeof selectedResident.age === 'number' || !isNaN(Number(selectedResident.age)) ? `만 ${selectedResident.age}세` : selectedResident.age})
                     </span>
                     <h3 className="text-sm font-bold text-slate-900 mt-1">{selectedResident.name} 어르신 상세 프로파일</h3>
                     <p className="text-[10px] text-slate-400">등록일: {selectedResident.registeredAt}</p>
@@ -866,6 +1025,14 @@ export default function App() {
                   <div className="flex-1 overflow-y-auto pr-1 space-y-4 max-h-[60vh] xl:max-h-[700px] scrollbar-thin">
                     {/* 인적 사유 정보 */}
                     <div className="space-y-2 text-xs text-slate-700 bg-slate-50 p-2.5 rounded border border-slate-200">
+                      {selectedResident.disabilityType && selectedResident.disabilityType !== '없음' && (
+                        <div>
+                          <span className="font-semibold text-slate-500 block text-[10px]">♿ 장애 분류 ({selectedResident.disabilityType})</span>
+                          <span className="text-emerald-700 font-medium text-[11px] bg-emerald-50 border border-emerald-200 rounded px-2 py-0.5 inline-block mt-1">
+                            {selectedResident.disabilityDetails || '등록된 세부 장애 내용이 없습니다.'}
+                          </span>
+                        </div>
+                      )}
                       <div>
                         <span className="font-semibold text-slate-500 block text-[10px]">📞 안부 비상연락처</span>
                         <span className="font-mono text-slate-800">{selectedResident.phone || '등록대기'}</span>
@@ -920,13 +1087,25 @@ export default function App() {
                               <div className="text-[10px] text-slate-400 mt-0.5">{p.participationDate} (총 {p.durationHours}시간)</div>
                               {p.notes && <p className="text-[10px] text-slate-600 mt-1 bg-white p-1 rounded border border-blue-50">{p.notes}</p>}
                             </div>
-                            <button
-                              onClick={() => handleDeleteParticipation(p.id)}
-                              className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer p-0.5"
-                              title="기록 삭제"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                            <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  setNewParticipation(p);
+                                  setShowParticipationModal(true);
+                                }}
+                                className="text-slate-400 hover:text-indigo-600 cursor-pointer p-0.5"
+                                title="수혜 기록 수정"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteParticipation(p.id)}
+                                className="text-slate-300 hover:text-red-500 cursor-pointer p-0.5"
+                                title="기록 삭제"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
                         ))}
                         {currentResidentParticipations.length === 0 && (
@@ -1114,11 +1293,59 @@ export default function App() {
                           {/* 프로그램 요약 */}
                           <div className="bg-indigo-50/50 border border-indigo-100 rounded-lg p-3 flex flex-wrap justify-between items-center gap-3">
                             <div>
-                              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                                <span className="inline-block w-2.5 h-2.5 bg-indigo-600 rounded-full animate-pulse"></span>
-                                {currentProg}
-                              </h3>
-                              <p className="text-[11px] text-slate-500 mt-0.5">
+                              {isRenamingProgram ? (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <input
+                                    type="text"
+                                    value={renameInputValue}
+                                    onChange={(e) => setRenameInputValue(e.target.value)}
+                                    className="text-xs px-2 py-1 border border-indigo-300 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500 h-[28px] font-semibold text-slate-800 w-48 sm:w-64"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleRenameProgram(currentProg, renameInputValue);
+                                      } else if (e.key === 'Escape') {
+                                        setIsRenamingProgram(false);
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    onClick={() => handleRenameProgram(currentProg, renameInputValue)}
+                                    className="p-1 px-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded border border-emerald-200 cursor-pointer transition-colors flex items-center gap-1 text-[11px] font-medium"
+                                    title="저장"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    저장
+                                  </button>
+                                  <button
+                                    onClick={() => setIsRenamingProgram(false)}
+                                    className="p-1 px-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded border border-slate-200 cursor-pointer transition-colors flex items-center gap-1 text-[11px] font-medium"
+                                    title="취소"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                    취소
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                                    <span className="inline-block w-2.5 h-2.5 bg-indigo-600 rounded-full animate-pulse"></span>
+                                    {currentProg}
+                                  </h3>
+                                  <button
+                                    onClick={() => {
+                                      setRenameInputValue(currentProg);
+                                      setIsRenamingProgram(true);
+                                    }}
+                                    className="text-[10px] text-indigo-700 hover:text-indigo-900 hover:bg-indigo-100 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 cursor-pointer font-medium flex items-center gap-0.5 transition-colors"
+                                    title="프로그램 명칭 일괄 변경"
+                                  >
+                                    <Edit className="w-2.5 h-2.5" />
+                                    명칭 수정
+                                  </button>
+                                </div>
+                              )}
+                              <p className="text-[11px] text-slate-500 mt-1">
                                 현재 본 프로그램에 총 <span className="font-bold text-indigo-700">{matchingParticipations.length}명</span>의 주민이 등록하여 수혜 중입니다.
                               </p>
                             </div>
@@ -1152,7 +1379,7 @@ export default function App() {
                                   <th className="p-2.5">참여시간</th>
                                   <th className="p-2.5">진행상태</th>
                                   <th className="p-2.5 max-w-xs">미작성 구체적 특이사항 요약</th>
-                                  <th className="p-2.5 text-right">삭제</th>
+                                  <th className="p-2.5 text-right">관리</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
@@ -1166,7 +1393,7 @@ export default function App() {
                                             onClick={() => { setSelectedResident(res); setActiveTab('residents'); }}
                                             className="font-bold text-indigo-650 hover:underline text-left cursor-pointer"
                                           >
-                                            {res.name} <span className="text-[10px] text-slate-400">({res.age}세, {res.gender})</span>
+                                            {res.name} <span className="text-[10px] text-slate-400">({typeof res.age === 'number' || !isNaN(Number(res.age)) ? `${res.age}세` : res.age}, {res.gender})</span>
                                           </button>
                                         ) : (
                                           <span className="text-red-400">[탈퇴 주민]</span>
@@ -1199,7 +1426,17 @@ export default function App() {
                                       <td className="p-2.5 text-slate-500 max-w-xs truncate" title={p.notes}>
                                         {p.notes || '-'}
                                       </td>
-                                      <td className="p-2.5 text-right">
+                                      <td className="p-2.5 text-right space-x-1">
+                                        <button
+                                          onClick={() => {
+                                            setNewParticipation(p);
+                                            setShowParticipationModal(true);
+                                          }}
+                                          className="text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer p-1 rounded hover:bg-indigo-50"
+                                          title="수혜 명세 수정"
+                                        >
+                                          <Edit className="w-3.5 h-3.5 inline" />
+                                        </button>
                                         <button
                                           onClick={() => handleDeleteParticipation(p.id)}
                                           className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer p-1 rounded hover:bg-red-50"
@@ -1273,7 +1510,7 @@ export default function App() {
                       <th className="p-2.5">수당 (시간)</th>
                       <th className="p-2.5">진행 상태</th>
                       <th className="p-2.5">기록내용 및 비고</th>
-                      <th className="p-2.5 text-right">삭제</th>
+                      <th className="p-2.5 text-right">관리</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1287,7 +1524,7 @@ export default function App() {
                                 onClick={() => { setSelectedResident(res); setActiveTab('residents'); }}
                                 className="font-bold text-indigo-650 hover:underline text-left cursor-pointer"
                               >
-                                {res.name} 어르신 ({res.age}세)
+                                {res.name} 어르신 ({typeof res.age === 'number' || !isNaN(Number(res.age)) ? `${res.age}세` : res.age})
                               </button>
                             ) : (
                               <span className="text-red-400">[탈퇴 주민]</span>
@@ -1310,7 +1547,17 @@ export default function App() {
                             </span>
                           </td>
                           <td className="p-2.5 text-slate-500 max-w-sm truncate" title={p.notes}>{p.notes || '기록된 특이사항이 없습니다.'}</td>
-                          <td className="p-2.5 text-right">
+                          <td className="p-2.5 text-right space-x-1">
+                            <button
+                              onClick={() => {
+                                setNewParticipation(p);
+                                setShowParticipationModal(true);
+                              }}
+                              className="text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer p-1 rounded hover:bg-indigo-50"
+                              title="수혜 명세 수정"
+                            >
+                              <Edit className="w-4 h-4 inline" />
+                            </button>
                             <button
                               onClick={() => handleDeleteParticipation(p.id)}
                               className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer p-1 rounded hover:bg-red-50"
@@ -1385,11 +1632,12 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">실 연령</label>
+                  <label className="block font-semibold text-slate-700 mb-1">생년월일 (만나이 계산)</label>
                   <input
-                    type="number"
+                    type="text"
                     value={editingResident.age || ''}
-                    onChange={(e) => setEditingResident({ ...editingResident, age: Number(e.target.value) })}
+                    placeholder="예: 94.01.01 (상세입력) 또는 숫자"
+                    onChange={(e) => setEditingResident({ ...editingResident, age: e.target.value })}
                     className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -1431,6 +1679,32 @@ export default function App() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">장애 여부</label>
+                  <select
+                    value={editingResident.disabilityType || '없음'}
+                    onChange={(e) => setEditingResident({ ...editingResident, disabilityType: e.target.value as any })}
+                    className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500 h-[34px]"
+                  >
+                    <option value="없음">없음</option>
+                    <option value="경증(4~5등급)">경증(4~5등급)</option>
+                    <option value="중증(1~3등급)">중증(1~3등급)</option>
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">세부 장애 내용</label>
+                  <input
+                    type="text"
+                    placeholder="장애 종류 및 세부 내역 기입 (예: 시각장애, 지체장애 등)"
+                    value={editingResident.disabilityDetails || ''}
+                    disabled={!editingResident.disabilityType || editingResident.disabilityType === '없음'}
+                    onChange={(e) => setEditingResident({ ...editingResident, disabilityDetails: e.target.value })}
+                    className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500 h-[34px] disabled:bg-slate-50 disabled:text-slate-400"
+                  />
+                </div>
+              </div>
+
               {!editingResident.id && (
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">초기 참여 복지관 프로그램 (동시 등록)</label>
@@ -1450,8 +1724,80 @@ export default function App() {
                         <option key={prog} value={prog} />
                       ))}
                   </datalist>
-                  <p className="text-[10px] text-slate-450 mt-1">
+                  <p className="text-[10px] text-slate-400 mt-1">
                     * 작성 완료 시 본 어르신의 첫 수혜 프로그램 가입 이력이 즉시 신설 동기화됩니다.
+                  </p>
+                </div>
+              )}
+
+              {!editingResident.id && (
+                <div className="bg-slate-50 p-2.5 rounded border border-slate-200 space-y-2">
+                  <div className="text-[11px] font-bold text-indigo-700 flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 bg-indigo-600 rounded-full animate-ping"></span>
+                    초기 지역 이웃 관계망 연결 (동시 등록)
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-0.5">연결 대상 이웃 주민</label>
+                      <select
+                        value={editingResident.initialRelationTargetId || ''}
+                        onChange={(e) => setEditingResident({ ...editingResident, initialRelationTargetId: e.target.value })}
+                        className="w-full text-[11px] p-1.5 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="">관계 연결 안 함 (선택 없음)</option>
+                        {residents.map(r => (
+                          <option key={r.id} value={r.id}>
+                            {r.name} ({typeof r.age === 'number' || !isNaN(Number(r.age)) ? `${r.age}세` : r.age}, {r.dong || '기타 동'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-0.5">관계 유형</label>
+                      <select
+                        value={editingResident.initialRelationType || '이웃'}
+                        onChange={(e) => setEditingResident({ ...editingResident, initialRelationType: e.target.value as any })}
+                        className="w-full text-[11px] p-1.5 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="이웃">이웃</option>
+                        <option value="친척">친척</option>
+                        <option value="친구">친구</option>
+                        <option value="지인">지인</option>
+                        <option value="돌봄제공자">돌봄제공자</option>
+                        <option value="공공기관">공공기관</option>
+                        <option value="기타">기타</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-5 gap-2">
+                    <div className="col-span-2">
+                      <label className="block text-[10px] text-slate-500 mb-0.5">친밀도 수치</label>
+                      <select
+                        value={editingResident.initialRelationStrength || 3}
+                        onChange={(e) => setEditingResident({ ...editingResident, initialRelationStrength: Number(e.target.value) })}
+                        className="w-full text-[11px] p-1.5 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value={1}>1 (매우 낮음)</option>
+                        <option value={2}>2 (낮음)</option>
+                        <option value={3}>3 (보통)</option>
+                        <option value={4}>4 (높음)</option>
+                        <option value={5}>5 (매우 높음)</option>
+                      </select>
+                    </div>
+                    <div className="col-span-3">
+                      <label className="block text-[10px] text-slate-500 mb-0.5">관계 특이사항 요약</label>
+                      <input
+                        type="text"
+                        placeholder="예: 같은 통 거주, 정기 가가호호 연락처 교환지"
+                        value={editingResident.initialRelationNotes || ''}
+                        onChange={(e) => setEditingResident({ ...editingResident, initialRelationNotes: e.target.value })}
+                        className="w-full text-[11px] p-1.5 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    * 본 주민 편적 즉시 해당 주민과의 상호 이웃 관계선이 네트워크 지도로 즉시 투영됩니다.
                   </p>
                 </div>
               )}
@@ -1498,8 +1844,12 @@ export default function App() {
               <X className="w-4 h-4" />
             </button>
 
-            <h3 className="text-sm font-bold text-slate-950 mb-1">프로그램 참여 기록장 기록</h3>
-            <p className="text-xs text-slate-400 mb-3">현재 주민의 행사, 노래교실, 일자리, 배달 수혜내용을 등재합니다.</p>
+            <h3 className="text-sm font-bold text-slate-950 mb-1">
+              {newParticipation.id ? '프로그램 참여 기록 수정' : '프로그램 참여 기록장 기록'}
+            </h3>
+            <p className="text-xs text-slate-400 mb-3">
+              {newParticipation.id ? '선택한 주민의 참여 기록 및 수혜 명세 세부정보를 수정합니다.' : '현재 주민의 행사, 노래교실, 일자리, 배달 수혜내용을 등재합니다.'}
+            </p>
 
             <form onSubmit={handleAddParticipationSubmit} className="space-y-3 text-xs">
               <div>
@@ -1511,7 +1861,7 @@ export default function App() {
                 >
                   <option value="" disabled>어르신 선택</option>
                   {residents.map(r => (
-                    <option key={r.id} value={r.id}>{r.name} ({r.age}세) — {r.address}</option>
+                    <option key={r.id} value={r.id}>{r.name} ({typeof r.age === 'number' || !isNaN(Number(r.age)) ? `${r.age}세` : r.age}) — {r.address}</option>
                   ))}
                 </select>
               </div>
@@ -1589,7 +1939,7 @@ export default function App() {
                   type="submit"
                   className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 font-bold text-white rounded cursor-pointer text-xs"
                 >
-                  저장
+                  {newParticipation.id ? '수정 사항 저장' : '등록 및 반영'}
                 </button>
               </div>
             </form>
@@ -1621,7 +1971,7 @@ export default function App() {
                 >
                   <option value="" disabled>어르신 선택</option>
                   {residents.map(r => (
-                    <option key={r.id} value={r.id}>{r.name} ({r.age}세) — {r.address}</option>
+                    <option key={r.id} value={r.id}>{r.name} ({typeof r.age === 'number' || !isNaN(Number(r.age)) ? `${r.age}세` : r.age}) — {r.address}</option>
                   ))}
                 </select>
               </div>
@@ -1635,7 +1985,7 @@ export default function App() {
                 >
                   <option value="" disabled>어르신 선택</option>
                   {residents.map(r => (
-                    <option key={r.id} value={r.id}>{r.name} ({r.age}세) — {r.address}</option>
+                    <option key={r.id} value={r.id}>{r.name} ({typeof r.age === 'number' || !isNaN(Number(r.age)) ? `${r.age}세` : r.age}) — {r.address}</option>
                   ))}
                 </select>
               </div>
@@ -1653,6 +2003,7 @@ export default function App() {
                     <option value="친구">친구</option>
                     <option value="지인">지인</option>
                     <option value="돌봄제공자">돌봄제공자</option>
+                    <option value="공공기관">공공기관</option>
                     <option value="기타">기타</option>
                   </select>
                 </div>
