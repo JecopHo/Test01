@@ -774,10 +774,10 @@ export default function App() {
       {/* 📁 메인 콘텐츠 영역 */}
       <main className="flex-1 px-6 py-4 flex flex-col gap-4">
         {/* 네비게이션 탭 아이템 바 */}
-        <div className="flex border-b border-slate-200">
+        <div className="flex border-b border-slate-200 overflow-x-auto whitespace-nowrap scrollbar-thin">
           <button
             onClick={() => { setActiveTab('residents'); setSelectedResident(null); }}
-            className={`px-5 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+            className={`px-4 py-3 text-xs sm:text-sm font-semibold flex items-center gap-2 border-b-2 transition-all cursor-pointer shrink-0 ${
               activeTab === 'residents' 
                 ? 'border-indigo-600 text-indigo-700 font-bold bg-indigo-50/45 rounded-t-lg' 
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -788,7 +788,7 @@ export default function App() {
           </button>
           <button
             onClick={() => { setActiveTab('graph'); setSelectedResident(null); }}
-            className={`px-5 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+            className={`px-4 py-3 text-xs sm:text-sm font-semibold flex items-center gap-2 border-b-2 transition-all cursor-pointer shrink-0 ${
               activeTab === 'graph' 
                 ? 'border-indigo-600 text-indigo-700 font-bold bg-indigo-50/45 rounded-t-lg' 
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -799,7 +799,7 @@ export default function App() {
           </button>
           <button
             onClick={() => { setActiveTab('programGroups'); setSelectedResident(null); }}
-            className={`px-5 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+            className={`px-4 py-3 text-xs sm:text-sm font-semibold flex items-center gap-2 border-b-2 transition-all cursor-pointer shrink-0 ${
               activeTab === 'programGroups' 
                 ? 'border-indigo-600 text-indigo-700 font-bold bg-indigo-50/45 rounded-t-lg' 
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -810,7 +810,7 @@ export default function App() {
           </button>
           <button
             onClick={() => { setActiveTab('programs'); setSelectedResident(null); }}
-            className={`px-5 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+            className={`px-4 py-3 text-xs sm:text-sm font-semibold flex items-center gap-2 border-b-2 transition-all cursor-pointer shrink-0 ${
               activeTab === 'programs' 
                 ? 'border-indigo-600 text-indigo-700 font-bold bg-indigo-50/45 rounded-t-lg' 
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -819,7 +819,6 @@ export default function App() {
             <Layers className="w-4 h-4" />
             서비스 현황
           </button>
-
         </div>
 
         {/* 탭 분기 내용 그리기 */}
@@ -1013,7 +1012,7 @@ export default function App() {
 
                   <div className="border-b border-slate-200 pb-2.5 flex-none select-none">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                      selectedResident.gender === '남성' ? 'bg-cyan-50 text-cyan-700 border border-cyan-150' : 'bg-rose-50 text-rose-700 border border-rose-150'
+                      selectedResident.gender === '남성' ? 'bg-cyan-50 text-cyan-700 border border-cyan-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
                     }`}>
                       {selectedResident.gender} ({typeof selectedResident.age === 'number' || !isNaN(Number(selectedResident.age)) ? `만 ${selectedResident.age}세` : selectedResident.age})
                     </span>
@@ -1078,8 +1077,8 @@ export default function App() {
                                   p.progressStatus === '완료' 
                                     ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
                                     : p.progressStatus === '진행중' 
-                                    ? 'bg-blue-50 text-blue-800 border border-blue-205'
-                                    : 'bg-amber-55 text-amber-800'
+                                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                    : 'bg-amber-50 text-amber-800 border border-amber-200'
                                 }`}>
                                   {p.progressStatus}
                                 </span>
@@ -1181,7 +1180,7 @@ export default function App() {
             <div className="bg-white border border-slate-200 rounded shadow-sm p-4" id="view-network-tab">
               <div className="mb-4">
                 <h2 className="text-sm font-bold text-slate-950 flex items-center gap-1.5">
-                  <Map className="w-5 h-5 text-indigo-650" />
+                  <Map className="w-5 h-5 text-indigo-600" />
                   지역 주민 대화 이력 및 소셜 지형 관계도 (D3 물리 그래프)
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -1207,7 +1206,7 @@ export default function App() {
               <div className="mb-4 flex flex-wrap justify-between items-center gap-4">
                 <div>
                   <h2 className="text-sm font-bold text-slate-950 flex items-center gap-1.5">
-                    <CalendarCheck className="w-5 h-5 text-indigo-650" />
+                    <CalendarCheck className="w-5 h-5 text-indigo-600" />
                     프로그램별 주민 참여 현황 일괄 원장
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
@@ -1249,7 +1248,7 @@ export default function App() {
                           placeholder="프로그램명 검색..."
                           value={programSearch}
                           onChange={(e) => setProgramSearch(e.target.value)}
-                          className="w-full text-xs pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded outline-hidden focus:ring-2 focus:ring-indigo-505 h-[32px]"
+                          className="w-full text-xs pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded outline-hidden focus:ring-2 focus:ring-indigo-500 h-[32px]"
                         />
                         <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                       </div>
@@ -1361,7 +1360,7 @@ export default function App() {
                                 });
                                 setShowParticipationModal(true);
                               }}
-                              className="bg-indigo-650 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded flex items-center gap-1 cursor-pointer transition-colors"
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded flex items-center gap-1 cursor-pointer transition-colors"
                             >
                               <Plus className="w-3.5 h-3.5" />
                               신규 참여자 등록
@@ -1391,7 +1390,7 @@ export default function App() {
                                         {res ? (
                                           <button 
                                             onClick={() => { setSelectedResident(res); setActiveTab('residents'); }}
-                                            className="font-bold text-indigo-650 hover:underline text-left cursor-pointer"
+                                            className="font-bold text-indigo-600 hover:underline text-left cursor-pointer"
                                           >
                                             {res.name} <span className="text-[10px] text-slate-400">({typeof res.age === 'number' || !isNaN(Number(res.age)) ? `${res.age}세` : res.age}, {res.gender})</span>
                                           </button>
@@ -1409,7 +1408,7 @@ export default function App() {
                                         )}
                                       </td>
                                       <td className="p-2.5 text-slate-500 font-mono">{p.participationDate}</td>
-                                      <td className="p-2.5 text-slate-650 font-mono">{p.durationHours}시간</td>
+                                      <td className="p-2.5 text-slate-600 font-mono">{p.durationHours}시간</td>
                                       <td className="p-2.5">
                                         <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
                                           p.progressStatus === '완료' 
@@ -1522,7 +1521,7 @@ export default function App() {
                             {res ? (
                               <button 
                                 onClick={() => { setSelectedResident(res); setActiveTab('residents'); }}
-                                className="font-bold text-indigo-650 hover:underline text-left cursor-pointer"
+                                className="font-bold text-indigo-600 hover:underline text-left cursor-pointer"
                               >
                                 {res.name} 어르신 ({typeof res.age === 'number' || !isNaN(Number(res.age)) ? `${res.age}세` : res.age})
                               </button>
@@ -1836,7 +1835,7 @@ export default function App() {
       {/* 2. 참여 수혜기록 추가 입력 모달 */}
       {showParticipationModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded border border-slate-300 max-w-md w-full shadow-2xl p-5 relative">
+          <div className="bg-white rounded border border-slate-300 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl p-5 relative">
             <button
               onClick={() => setShowParticipationModal(false)}
               className="absolute top-4 right-4 p-1 hover:bg-slate-100 text-slate-400 rounded transition-colors cursor-pointer"
@@ -1950,7 +1949,7 @@ export default function App() {
       {/* 3. 소셜 관계선 추가 입력 모달 */}
       {showRelationshipModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded border border-slate-300 max-w-md w-full shadow-2xl p-5 relative">
+          <div className="bg-white rounded border border-slate-300 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl p-5 relative">
             <button
               onClick={() => setShowRelationshipModal(false)}
               className="absolute top-4 right-4 p-1 hover:bg-slate-100 text-slate-400 rounded transition-colors cursor-pointer"
@@ -2034,7 +2033,7 @@ export default function App() {
                 />
               </div>
 
-              <div className="flex gap-2 justify-end pt-2 border-t border-slate-205">
+              <div className="flex gap-2 justify-end pt-2 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setShowRelationshipModal(false)}
@@ -2055,11 +2054,11 @@ export default function App() {
       )}
 
       {/* 🚀 하단 카피라이트 가이드라인 바 */}
-      <footer className="bg-white border-t border-slate-205 px-6 py-4 mt-auto text-xs text-slate-400 flex flex-wrap justify-between items-center gap-4">
+      <footer className="bg-white border-t border-slate-200 px-6 py-4 mt-auto text-xs text-slate-400 flex flex-wrap justify-between items-center gap-4">
         <span>© 2026 구글 스프레드시트 풀스택 주민 정보 & 소외선 분석 명록 시스템</span>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1">
-            <Info className="w-3.5 h-3.5 text-indigo-650" />
+            <Info className="w-3.5 h-3.5 text-indigo-600" />
             구글 드라이브 앱스 스크립트 기반 동작 (CORS-Compliant CORS Tunneling)
           </span>
 

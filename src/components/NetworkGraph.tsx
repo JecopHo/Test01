@@ -56,8 +56,8 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
         const { width, height } = entry.contentRect;
         // 최소 크기 지정
         setDimensions({
-          width: Math.max(width, 400),
-          height: Math.max(height, 500)
+          width: Math.max(width, 280),
+          height: Math.max(height, 450)
         });
       }
     });
