@@ -26,7 +26,10 @@ import {
   AlertTriangle,
   UserCheck,
   Activity,
-  HeartHandshake
+  HeartHandshake,
+  Settings,
+  Download,
+  Upload
 } from 'lucide-react';
 import { Resident, Participation, Relationship, GASConfig } from './types';
 import { MOCK_RESIDENTS, MOCK_PARTICIPATIONS, MOCK_RELATIONSHIPS } from './mockData';
@@ -136,6 +139,9 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [showGasModal, setShowGasModal] = useState<boolean>(false);
+  const [inputGasUrl, setInputGasUrl] = useState<string>('');
+  const [inputGasEnabled, setInputGasEnabled] = useState<boolean>(false);
 
   // 프로그램별 분할 전용 상태
   const [selectedProgram, setSelectedProgram] = useState<string>('');
@@ -180,8 +186,11 @@ export default function App() {
   // --- 데이터 불러오기 및 초기화 ---
   useEffect(() => {
     // 1. 로컬 스토리지에서 GAS 설정 로드
-    const storedGasUrl = localStorage.getItem('gas_url');
+    const storedGasUrl = localStorage.getItem('gas_url') || '';
     const storedGasEnabled = localStorage.getItem('gas_enabled') === 'true';
+    
+    setInputGasUrl(storedGasUrl);
+    setInputGasEnabled(storedGasEnabled);
     
     if (storedGasUrl) {
       setGasConfig({ url: storedGasUrl, isEnabled: storedGasEnabled });
@@ -312,6 +321,74 @@ export default function App() {
     navigator.clipboard.writeText(GOOGLE_APPS_SCRIPT_CODE);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
+  };
+
+  // --- 설정 및 백업 관리 폼 핸들러 ---
+  const handleSaveSettingsForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await handleSaveGasConfig(inputGasUrl, inputGasEnabled);
+    setShowGasModal(false);
+  };
+
+  // JSON 파일 백업 내보내기 (Export)
+  const handleExportData = () => {
+    try {
+      const backupObj = {
+        residents,
+        participations,
+        relationships,
+        exportedAt: new Date().toISOString()
+      };
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupObj, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `welfare_backup_${new Date().toISOString().split('T')[0]}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    } catch (err: any) {
+      alert("백업 파일 생성 중 오류가 발생했습니다: " + err.message);
+    }
+  };
+
+  // JSON 파일 백업 가져오기 및 복구 (Import)
+  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileReader = new FileReader();
+    if (e.target.files && e.target.files[0]) {
+      fileReader.readAsText(e.target.files[0], "UTF-8");
+      fileReader.onload = (event) => {
+        try {
+          const parsed = JSON.parse(event.target?.result as string);
+          if (parsed && Array.isArray(parsed.residents) && Array.isArray(parsed.participations) && Array.isArray(parsed.relationships)) {
+            const confirmRestore = window.confirm(
+              `백업 데이터를 가져오시겠습니까?\n\n[백업할 파일 정보]\n- 등록 주민: ${parsed.residents.length}명\n- 프로그램 참여: ${parsed.participations.length}건\n- 주민 관계망 연결: ${parsed.relationships.length}쌍\n\n주의: 기존 브라우저에 등록되어 있던 모든 데이터는 영구적으로 덮어씌워져 동기화됩니다.`
+            );
+            if (!confirmRestore) return;
+
+            setResidents(parsed.residents);
+            setParticipations(parsed.participations);
+            setRelationships(parsed.relationships);
+            saveToLocalStorage(parsed.residents, parsed.participations, parsed.relationships);
+            
+            // If GAS is enabled, write updates
+            if (gasConfig.isEnabled && gasConfig.url) {
+              // Option to sync with cloud
+              alert("데이터가 로컬에 정상적으로 반영되었습니다. 클라우드 연동이 켜져 있으므로 데이터가 구글 스프레드시트에도 자동 업로드됩니다.");
+              setTimeout(() => {
+                fetchFromGAS(gasConfig.url);
+              }, 1200);
+            } else {
+              alert(`성공적으로 백업 데이터를 가져왔습니다!\n(주민 ${parsed.residents.length}명, 참여이력 ${parsed.participations.length}건, 관계망 ${parsed.relationships.length}쌍 반영)`);
+            }
+            setShowGasModal(false);
+          } else {
+            alert("유효한 백업 파일 양식이 아닙니다. 필수 데이터 키(residents, participations, relationships)가 누락되어 있습니다.");
+          }
+        } catch (err: any) {
+          alert("파일 가져오기에 실패했습니다. 올바른 JSON 파일 형태인지 확인해 주세요. 에러: " + err.message);
+        }
+      };
+    }
   };
 
   // --- CRUD 기능 동작 구현 ---
@@ -682,9 +759,23 @@ export default function App() {
                 className="bg-indigo-800 hover:bg-indigo-700 border border-indigo-700 p-1.5 px-3 rounded text-indigo-200 font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer disabled:opacity-50"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-                <span>데이터 동기화</span>
+                <span>동기화</span>
               </button>
             )}
+
+            <button
+              onClick={() => {
+                setInputGasUrl(gasConfig.url);
+                setInputGasEnabled(gasConfig.isEnabled);
+                setShowGasModal(true);
+              }}
+              className="bg-indigo-800 hover:bg-indigo-700 border border-indigo-700 p-1.5 px-3 rounded text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+              title="구글 시트 연동 및 데이터 백업/복구 설정"
+              id="open-settings-modal"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              <span>연동/백업 설정</span>
+            </button>
           </div>
         </div>
       </header>
@@ -2049,6 +2140,118 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 4. 구글 시트 연동 및 데이터 백업/복구 관리 모달 */}
+      {showGasModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded border border-slate-300 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6 relative text-slate-800">
+            <button
+              onClick={() => setShowGasModal(false)}
+              className="absolute top-4 right-4 p-1 hover:bg-slate-100 text-slate-400 rounded transition-colors cursor-pointer animate-none"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <h3 className="text-sm font-bold text-slate-950 mb-1 flex items-center gap-1.5">
+              <Settings className="w-4 h-4 text-indigo-600 animate-none" />
+              연동 및 데이터 백업/복구 설정
+            </h3>
+            <p className="text-xs text-slate-400 mb-4 font-normal">
+              기기(PC와 모바일) 간 데이터를 완벽하게 일치시키기 위한 분산 전용 백업 및 클라우드 연동 제어판입니다.
+            </p>
+
+            <div className="space-y-5 text-xs">
+              {/* Part 1: 구글 시트 웹 앱 */}
+              <form onSubmit={handleSaveSettingsForm} className="space-y-3 bg-slate-50 border border-slate-200 p-3.5 rounded-lg">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <span className="font-bold text-slate-800 text-xs flex items-center gap-1">
+                    <Database className="w-3.5 h-3.5 text-indigo-600" />
+                    실시간 구글 시트 클라우드 연동
+                  </span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={inputGasEnabled}
+                      onChange={(e) => setInputGasEnabled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-8 h-4 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                    <span className="ml-1.5 text-[10px] font-bold text-slate-500">
+                      {inputGasEnabled ? '켬' : '끎'}
+                    </span>
+                  </label>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-705 block text-slate-750">Google Apps Script Web App URL</label>
+                  <input
+                    type="url"
+                    placeholder="https://script.google.com/macros/s/.../exec"
+                    value={inputGasUrl}
+                    onChange={(e) => setInputGasUrl(e.target.value)}
+                    className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    disabled={!inputGasEnabled}
+                  />
+                  <p className="text-[10px] text-slate-400 leading-relaxed font-normal">
+                    * 구글 스프레드시트 연동을 활성화하고 본인의 앱스 스크립트 웹 앱 주소를 복사-붙여넣기하면, 실시간 클라우드 저장이 연계되어 PC-모바일 기기가 같은 클라우드 시트를 공용 사용하도록 자동 실시간 정렬화처리됩니다.
+                  </p>
+                </div>
+
+                <div className="flex justify-between items-center pt-1.5 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyCode}
+                    className="p-1 px-2 border border-slate-200 text-slate-600 hover:bg-slate-100 bg-white rounded cursor-pointer text-[10px] font-medium flex items-center gap-1 transition-colors"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>{isCopied ? '복사 완료!' : '스크립트 코드 복사 (원전)'}</span>
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 font-bold text-white rounded cursor-pointer text-[11px] transition-colors"
+                  >
+                    연동 설정 저장 및 동기화
+                  </button>
+                </div>
+              </form>
+
+              {/* Part 2: 오프라인 수동 백업 및 복구 */}
+              <div className="space-y-3 bg-indigo-50/40 border border-indigo-100 p-3.5 rounded-lg text-slate-800">
+                <span className="font-bold text-indigo-950 text-xs flex items-center gap-1 border-b border-indigo-100 pb-2">
+                  <RefreshCw className="w-3.5 h-3.5 text-indigo-600" />
+                  수동 데이터 백업 및 즉시 복구 (기기간 직접 이관)
+                </span>
+                
+                <p className="text-[11px] text-slate-500 leading-relaxed font-normal">
+                  스프레드시트 세팅 작업 없이, 단순히 현재 PC의 상태를 모바일 기기로 넘기고 싶을 때 사용할 수 있는 고간이성 다이렉트 백업 기능입니다. PC에서 <strong>백업 파일 다운로드</strong> 한 뒤 파일(.json)을 카톡, 메일 등으로 모바일에 전송하여 모바일에서 <strong>가져오기</strong> 해주세요.
+                </p>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleExportData}
+                    className="flex-1 py-2 px-3 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 bg-white rounded cursor-pointer text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    현재 데이터 백업 파일 받기 (.json)
+                  </button>
+
+                  <label className="flex-1 py-2 px-3 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 bg-white rounded cursor-pointer text-xs font-bold flex items-center justify-center gap-1.5 transition-colors text-center">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>백업 파일 복구하기 (.json)</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportData}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
