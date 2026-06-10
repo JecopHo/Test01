@@ -59,53 +59,67 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  initSpreadsheet();
-  
-  let responseData;
+  const lock = LockService.getScriptLock();
   try {
-    const payload = JSON.parse(e.postData.contents);
-    const action = payload.action;
-    const body = payload.data;
-
-    if (!action) {
-      throw new Error('액션(action) 파라미터가 비어 있습니다.');
+    if (!lock.tryLock(10000)) {
+      return createJsonResponse({ success: false, error: '서버 혼잡으로 10초 대기 시간 초과: 다른 사용자가 작업을 처리 중입니다. 잠시 후 다시 시도해 주세요.' });
     }
-
-    switch (action) {
-      // 주민 CRUD
-      case 'saveResident':
-        responseData = saveRow(SHEETS.RESIDENTS, body);
-        break;
-      case 'deleteResident':
-        responseData = deleteRow(SHEETS.RESIDENTS, body.id);
-        // 주민이 삭제되면 해당 주민과 관련된 참여이력 및 관계망도 같이 연쇄 삭제해 데이터 무결성 지키기
-        cascadeDelete(body.id);
-        break;
-
-      // 참여이력 CRUD
-      case 'saveParticipation':
-        responseData = saveRow(SHEETS.PARTICIPATION, body);
-        break;
-      case 'deleteParticipation':
-        responseData = deleteRow(SHEETS.PARTICIPATION, body.id);
-        break;
-
-      // 관계망 CRUD
-      case 'saveRelationship':
-        responseData = saveRow(SHEETS.RELATIONSHIPS, body);
-        break;
-      case 'deleteRelationship':
-        responseData = deleteRow(SHEETS.RELATIONSHIPS, body.id);
-        break;
-
-      default:
-        throw new Error('알 수 없는 POST 액션입니다: ' + action);
-    }
-  } catch (error) {
-    responseData = { success: false, error: error.toString() };
+  } catch (err) {
+    return createJsonResponse({ success: false, error: 'LockService 오류: ' + err.toString() });
   }
 
-  return createJsonResponse(responseData);
+  try {
+    initSpreadsheet();
+    
+    let responseData;
+    try {
+      const payload = JSON.parse(e.postData.contents);
+      const action = payload.action;
+      const body = payload.data;
+
+      if (!action) {
+        throw new Error('액션(action) 파라미터가 비어 있습니다.');
+      }
+
+      switch (action) {
+        // 주민 CRUD
+        case 'saveResident':
+          responseData = saveRow(SHEETS.RESIDENTS, body);
+          break;
+        case 'deleteResident':
+          responseData = deleteRow(SHEETS.RESIDENTS, body.id);
+          // 주민이 삭제되면 해당 주민과 관련된 참여이력 및 관계망도 같이 연쇄 삭제해 데이터 무결성 지키기
+          cascadeDelete(body.id);
+          break;
+
+        // 참여이력 CRUD
+        case 'addParticipation':
+        case 'saveParticipation':
+          responseData = saveRow(SHEETS.PARTICIPATION, body);
+          break;
+        case 'deleteParticipation':
+          responseData = deleteRow(SHEETS.PARTICIPATION, body.id);
+          break;
+
+        // 관계망 CRUD
+        case 'saveRelationship':
+          responseData = saveRow(SHEETS.RELATIONSHIPS, body);
+          break;
+        case 'deleteRelationship':
+          responseData = deleteRow(SHEETS.RELATIONSHIPS, body.id);
+          break;
+
+        default:
+          throw new Error('알 수 없는 POST 액션입니다: ' + action);
+      }
+    } catch (error) {
+      responseData = { success: false, error: error.toString() };
+    }
+
+    return createJsonResponse(responseData);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // JSON 응답 생성 (CORS 해결용 헤더 필수 포함)
@@ -114,29 +128,53 @@ function createJsonResponse(data) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// 초기화: 시트가 비어있다면 테이블 헤더(스키마) 생성
+// 초기화: 시트 생성 또는 누락 컬럼 자동 세팅 수행
 function initSpreadsheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
-  // 주민 시트 체크
-  let sResidents = ss.getSheetByName(SHEETS.RESIDENTS);
-  if (!sResidents) {
-    sResidents = ss.insertSheet(SHEETS.RESIDENTS);
-    sResidents.appendRow(['id', 'name', 'gender', 'age', 'basicPhone', 'phone', 'address', 'isolationGroup', 'notes', 'registeredAt']);
-  }
+  // 프론트엔드와 100% 매치되는 시트 스키마(헤더) 정의
+  const expectedHeaders = {
+    '주민': [
+      'id', 'name', 'gender', 'age', 'phone', 'address', 'basicPhone', 'dong', 
+      'notes', 'registeredAt', 'disabilityType', 'disabilityDetails', 
+      'isolationGroup', 'emergencyContactRelation', 'managerName'
+    ],
+    '참여이력': [
+      'id', 'residentId', 'programName', 'participationDate', 'durationHours', 
+      'progressStatus', 'notes'
+    ],
+    '관계망': [
+      'id', 'sourceId', 'targetId', 'relationType', 'strength', 'notes'
+    ]
+  };
 
-  // 참여이력 시트 체크
-  let sParticipation = ss.getSheetByName(SHEETS.PARTICIPATION);
-  if (!sParticipation) {
-    sParticipation = ss.insertSheet(SHEETS.PARTICIPATION);
-    sParticipation.appendRow(['id', 'residentId', 'programName', 'participationDate', 'durationHours', 'progressStatus', 'notes']);
-  }
-
-  // 관계망 시트 체크
-  let sRelationships = ss.getSheetByName(SHEETS.RELATIONSHIPS);
-  if (!sRelationships) {
-    sRelationships = ss.insertSheet(SHEETS.RELATIONSHIPS);
-    sRelationships.appendRow(['id', 'sourceId', 'targetId', 'relationType', 'strength', 'notes']);
+  for (let key in expectedHeaders) {
+    const sheetName = SHEETS[key === '주민' ? 'RESIDENTS' : (key === '참여이력' ? 'PARTICIPATION' : 'RELATIONSHIPS')];
+    let sheet = ss.getSheetByName(sheetName);
+    const expected = expectedHeaders[key];
+    
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      sheet.appendRow(expected);
+    } else {
+      // 이미 시트가 존재하는 경우: 혹시 필드가 누락됐거나 띄어쓰기 등 불일치할 시 칼럼 자동 추가 (Self-healing Schema)
+      let currentHeaders = [];
+      const lastCol = sheet.getLastColumn();
+      if (lastCol > 0) {
+        currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+          return h ? h.toString().trim() : '';
+        });
+      }
+      
+      const missingHeaders = expected.filter(function(h) {
+        return currentHeaders.indexOf(h) === -1;
+      });
+      
+      if (missingHeaders.length > 0) {
+        const startCol = lastCol > 0 ? lastCol + 1 : 1;
+        sheet.getRange(1, startCol, 1, missingHeaders.length).setValues([missingHeaders]);
+      }
+    }
   }
 }
 
@@ -146,7 +184,7 @@ function getSheetData(sheetName) {
   const rows = sheet.getDataRange().getValues();
   if (rows.length <= 1) return []; // 데이터 없음 (헤더만 있음)
 
-  const headers = rows[0];
+  const headers = rows[0].map(function(h) { return h ? h.toString().trim() : ''; });
   const data = [];
 
   for (let i = 1; i < rows.length; i++) {
@@ -154,14 +192,33 @@ function getSheetData(sheetName) {
     const item = {};
     let isEmpty = true;
     for (let j = 0; j < headers.length; j++) {
-      item[headers[j]] = row[j];
+      const headerName = headers[j];
+      if (!headerName) continue;
+      
+      const val = row[j];
+      item[headerName] = (val === undefined || val === null) ? '' : val;
       if (row[j] !== '') isEmpty = false;
     }
+    
     if (!isEmpty) {
-      // 숫자 및 날짜 필드 수동 타입 조절
-      if (item.age) item.age = isNaN(Number(item.age)) ? item.age : Number(item.age);
-      if (item.durationHours) item.durationHours = Number(item.durationHours);
-      if (item.strength) item.strength = Number(item.strength);
+      // 숫자 및 날짜 필드 수동 타입 조절 및 결측값 안전 처리
+      if (item.age !== undefined && item.age !== '') {
+        item.age = isNaN(Number(item.age)) ? item.age : Number(item.age);
+      } else {
+        item.age = '';
+      }
+      
+      if (item.durationHours !== undefined && item.durationHours !== '') {
+        item.durationHours = isNaN(Number(item.durationHours)) ? 0 : Number(item.durationHours);
+      } else {
+        item.durationHours = 0;
+      }
+      
+      if (item.strength !== undefined && item.strength !== '') {
+        item.strength = isNaN(Number(item.strength)) ? 3 : Number(item.strength);
+      } else {
+        item.strength = 3;
+      }
       
       data.push(item);
     }
@@ -173,15 +230,28 @@ function getSheetData(sheetName) {
 function saveRow(sheetName, item) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   const rows = sheet.getDataRange().getValues();
-  const headers = rows[0];
+  const headers = rows[0].map(function(h) { return h ? h.toString().trim() : ''; });
   
   if (!item.id) {
-    // ID가 없을 경우 새로운 UUID 성격의 고유 키 자동생성
+    // ID가 없을 경우 새로운 고유 ID 자동 생성
     item.id = 'ID_' + Math.random().toString(36).substr(2, 9).toUpperCase();
   }
 
-  const newRowValues = headers.map(header => {
-    return item[header] !== undefined ? item[header] : '';
+  // 각 헤더 필드에 대해 띄어쓰기 및 대소문자 매칭을 하고 누락될 경우 안전하게 빈 문자열 "" 처리
+  const newRowValues = headers.map(function(header) {
+    if (!header) return '';
+    const val = item[header];
+    if (val === undefined || val === null) {
+      return '';
+    }
+    if (typeof val === 'object') {
+      try {
+        return JSON.stringify(val);
+      } catch (e) {
+        return '';
+      }
+    }
+    return val;
   });
 
   // 기존 행 업데이트 검사
@@ -194,7 +264,7 @@ function saveRow(sheetName, item) {
   }
 
   if (foundRowIndex !== -1) {
-    // 업뎃
+    // 업데이트
     const range = sheet.getRange(foundRowIndex, 1, 1, headers.length);
     range.setValues([newRowValues]);
   } else {

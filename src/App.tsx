@@ -428,7 +428,10 @@ export default function App() {
   // 주민 추가 및 수정
   const handleSaveResidentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingResident?.name) return;
+    if (!editingResident?.name || !editingResident.name.trim()) {
+      alert('필수 항목을 입력해 주세요');
+      return;
+    }
 
     let updatedResidents = [...residents];
     const isNew = !editingResident.id;
@@ -569,7 +572,10 @@ export default function App() {
   // 참여이력 추가 및 수정
   const handleAddParticipationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newParticipation.residentId || !newParticipation.programName) return;
+    if (!newParticipation.residentId || !newParticipation.programName || !newParticipation.programName.trim()) {
+      alert('필수 항목을 입력해 주세요');
+      return;
+    }
 
     const isEdit = !!newParticipation.id;
     const participationId = newParticipation.id || 'P_' + Date.now();
@@ -653,7 +659,10 @@ export default function App() {
   // 관계망 추가 및 수정
   const handleAddRelationshipSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newRelationship.sourceId || !newRelationship.targetId) return;
+    if (!newRelationship.sourceId || !newRelationship.targetId) {
+      alert('필수 항목을 입력해 주세요');
+      return;
+    }
     if (newRelationship.sourceId === newRelationship.targetId) {
       alert('동일인물 간의 관계는 정의할 수 없습니다. 서로 다른 이웃을 매핑해주세요.');
       return;
@@ -2334,6 +2343,7 @@ export default function App() {
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">어르신 성명</label>
                 <select
+                  required
                   value={newParticipation.residentId || ''}
                   onChange={(e) => setNewParticipation({ ...newParticipation, residentId: e.target.value })}
                   className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
@@ -2458,6 +2468,7 @@ export default function App() {
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">이웃 1 (원천)</label>
                 <select
+                  required
                   value={newRelationship.sourceId || ''}
                   onChange={(e) => setNewRelationship({ ...newRelationship, sourceId: e.target.value })}
                   className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
@@ -2472,6 +2483,7 @@ export default function App() {
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">이웃 2 (대상)</label>
                 <select
+                  required
                   value={newRelationship.targetId || ''}
                   onChange={(e) => setNewRelationship({ ...newRelationship, targetId: e.target.value })}
                   className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
