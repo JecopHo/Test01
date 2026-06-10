@@ -143,6 +143,37 @@ export default function App() {
   const [inputGasUrl, setInputGasUrl] = useState<string>('');
   const [inputGasEnabled, setInputGasEnabled] = useState<boolean>(false);
 
+  // 자주 쓰는 비상연락망 및 담당자 항목 삭제/숨김 목록 상태
+  const [deletedRelations, setDeletedRelations] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('deletedRelations');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [deletedManagers, setDeletedManagers] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('deletedManagers');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleDeleteRelationShortcut = (rel: string) => {
+    const updated = [...deletedRelations, rel];
+    setDeletedRelations(updated);
+    localStorage.setItem('deletedRelations', JSON.stringify(updated));
+  };
+
+  const handleDeleteManagerShortcut = (mgr: string) => {
+    const updated = [...deletedManagers, mgr];
+    setDeletedManagers(updated);
+    localStorage.setItem('deletedManagers', JSON.stringify(updated));
+  };
+
   // 프로그램별 분할 전용 상태
   const [selectedProgram, setSelectedProgram] = useState<string>('');
   const [programSearch, setProgramSearch] = useState<string>('');
@@ -419,7 +450,27 @@ export default function App() {
       disabilityType: editingResident.disabilityType || '없음',
       disabilityDetails: editingResident.disabilityDetails || '',
       isolationGroup: editingResident.isolationGroup || '해당없음',
+      emergencyContactRelation: editingResident.emergencyContactRelation || '',
+      managerName: editingResident.managerName || '',
     };
+
+    // 만약 한 번 숨겼던 단축어(관계, 담당자)를 주관식으로 직접 기입해 주민 정보로 저장한다면, Suggetion 단축어 탭에 다시 표시
+    if (editingResident.emergencyContactRelation) {
+      const rel = editingResident.emergencyContactRelation.trim();
+      if (deletedRelations.includes(rel)) {
+        const updated = deletedRelations.filter(r => r !== rel);
+        setDeletedRelations(updated);
+        localStorage.setItem('deletedRelations', JSON.stringify(updated));
+      }
+    }
+    if (editingResident.managerName) {
+      const mgr = editingResident.managerName.trim();
+      if (deletedManagers.includes(mgr)) {
+        const updated = deletedManagers.filter(m => m !== mgr);
+        setDeletedManagers(updated);
+        localStorage.setItem('deletedManagers', JSON.stringify(updated));
+      }
+    }
 
     let updatedParticipations = [...participations];
     let updatedRelationships = [...relationships];
@@ -690,6 +741,7 @@ export default function App() {
       const matchSearch = res.name.toLowerCase().includes(residentSearch.toLowerCase()) || 
                           res.phone.includes(residentSearch) || 
                           (res.basicPhone && res.basicPhone.includes(residentSearch)) || 
+                          (res.managerName && res.managerName.toLowerCase().includes(residentSearch.toLowerCase())) || 
                           (res.address && res.address.toLowerCase().includes(residentSearch.toLowerCase()));
       const matchGender = genderFilter === '모두' || res.gender === genderFilter;
       
@@ -731,6 +783,31 @@ export default function App() {
 
     return { total, female, male, isolatedCount, programKinds };
   }, [residents, participations]);
+
+  // 등록된 모든 주민들 중에서 고유한 담당 관리자(managerName)를 추출하는 메모이징 변수
+  const existingManagers = useMemo(() => {
+    const managers = new Set<string>();
+    const defaults = ['김복지 사회복지사', '박상담 코디네이터', '이돌봄 생활지원사', '주민센터 담당자'];
+    residents.forEach(r => {
+      if (r.managerName && r.managerName.trim() !== '') {
+        managers.add(r.managerName.trim());
+      }
+    });
+    const combined = Array.from(new Set([...defaults, ...Array.from(managers)]));
+    return combined.filter(m => !deletedManagers.includes(m));
+  }, [residents, deletedManagers]);
+
+  // 등록된 주민들에게 기입된 안부 연락망 관계(emergencyContactRelation) 리스트 수집
+  const existingRelations = useMemo(() => {
+    const relations = new Set<string>(['큰아들', '작은아들', '첫째딸', '둘째딸', '배우자', '이웃', '친척', '돌봄제공자']);
+    residents.forEach(r => {
+      if (r.emergencyContactRelation && r.emergencyContactRelation.trim() !== '') {
+        relations.add(r.emergencyContactRelation.trim());
+      }
+    });
+    const combined = Array.from(relations);
+    return combined.filter(r => !deletedRelations.includes(r));
+  }, [residents, deletedRelations]);
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans text-slate-800 flex flex-col" id="service-root">
@@ -979,6 +1056,8 @@ export default function App() {
                         dong: '면목 4동',
                         notes: '',
                         isolationGroup: '해당없음',
+                        emergencyContactRelation: '',
+                        managerName: '',
                         initialProgram: '',
                         initialRelationTargetId: '',
                         initialRelationType: '이웃',
@@ -1072,7 +1151,14 @@ export default function App() {
                             onClick={() => setSelectedResident(res)}
                             className={`hover:bg-slate-50 transition-colors cursor-pointer ${selectedResident?.id === res.id ? 'bg-indigo-50/70 border-l-4 border-indigo-600 font-medium' : ''}`}
                           >
-                            <td className="p-2.5 font-semibold text-slate-900">{res.name}</td>
+                            <td className="p-2.5 font-semibold text-slate-900">
+                              <div>{res.name}</div>
+                              {res.managerName && (
+                                <div className="text-[10px] text-indigo-700 font-bold mt-0.5 bg-indigo-50 border border-indigo-150 px-1.5 py-0.2 rounded w-fit inline-flex items-center gap-1" title="담당 관리자" onClick={(e) => e.stopPropagation()}>
+                                  <span>👤</span> {res.managerName}
+                                </div>
+                              )}
+                            </td>
                             <td className="p-2.5">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-semibold mr-1.5 ${
                                 res.gender === '남성' ? 'bg-cyan-50 text-cyan-700 border border-cyan-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
@@ -1093,6 +1179,11 @@ export default function App() {
                               <div className="text-[10px] text-slate-500 mt-1" title="안부 비상연락처">
                                 <span className="text-[9px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.2 mr-1">안부</span>
                                 {res.phone || '010-0000-0000'}
+                                {res.emergencyContactRelation && (
+                                  <span className="ml-1 text-[9px] font-bold text-indigo-700 bg-indigo-50 px-1 py-0.2 rounded border border-indigo-250">
+                                    {res.emergencyContactRelation}
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className="p-2.5 text-slate-500 max-w-xs truncate">
@@ -1171,7 +1262,17 @@ export default function App() {
                       </span>
                     )}
                     <h3 className="text-sm font-bold text-slate-900 mt-1">{selectedResident.name} 어르신 상세 프로파일</h3>
-                    <p className="text-[10px] text-slate-400">등록일: {selectedResident.registeredAt}</p>
+                    <p className="text-[10px] text-slate-400 flex items-center gap-1.5 flex-wrap">
+                      <span>등록일: {selectedResident.registeredAt}</span>
+                      {selectedResident.managerName && (
+                        <>
+                          <span className="text-slate-300">•</span>
+                          <span className="inline-flex items-center gap-0.5 text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.2 select-none font-bold text-[9px]">
+                            👤 담당: {selectedResident.managerName}
+                          </span>
+                        </>
+                      )}
+                    </p>
                   </div>
 
                   {/* 스크롤 가능한 본문 영역 */}
@@ -1188,6 +1289,14 @@ export default function App() {
                           {selectedResident.isolationGroup || '해당없음 (일반관리)'}
                         </span>
                       </div>
+                      {selectedResident.managerName && (
+                        <div>
+                          <span className="font-semibold text-slate-500 block text-[10px]">👤 복지 담당 책임 관리자</span>
+                          <span className="text-[11px] text-indigo-800 font-bold bg-indigo-50 border border-indigo-200 rounded px-2 py-0.5 inline-block mt-1">
+                            {selectedResident.managerName}
+                          </span>
+                        </div>
+                      )}
                       {selectedResident.disabilityType && selectedResident.disabilityType !== '없음' && (
                         <div>
                           <span className="font-semibold text-slate-500 block text-[10px]">♿ 장애 분류 ({selectedResident.disabilityType})</span>
@@ -1202,7 +1311,14 @@ export default function App() {
                       </div>
                       <div>
                         <span className="font-semibold text-slate-500 block text-[10px]">📞 안부 비상연락처</span>
-                        <span className="font-mono text-slate-800">{selectedResident.phone || '등록대기'}</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="font-mono text-slate-800">{selectedResident.phone || '등록대기'}</span>
+                          {selectedResident.emergencyContactRelation && (
+                            <span className="text-[10px] bg-emerald-50 text-emerald-800 font-bold px-1.5 py-0.5 rounded border border-emerald-250">
+                              {selectedResident.emergencyContactRelation}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div>
                         <span className="font-semibold text-slate-500 block text-[10px]">🏠 실제 주소지</span>
@@ -1848,6 +1964,154 @@ export default function App() {
                   value={editingResident.phone || ''}
                   placeholder="예: 010-5678-8765 (자녀 또는 이웃 비상 연락망)"
                   onChange={(e) => setEditingResident({ ...editingResident, phone: e.target.value })}
+                  className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block font-semibold text-slate-700">비상연락망 관계 (대상 선택/입력)</label>
+                  <span className="text-[10px] text-slate-400">자주 쓰이는 관계를 탭으로 빠르고 쉽게 입력하세요 (삭제하려면 × 기호를 누르세요)</span>
+                </div>
+                {/* 비상연락망 관계 선택 탭 (단축 버튼) */}
+                <div className="flex flex-wrap gap-1 mb-2 font-medium">
+                  {existingRelations.map((rel) => {
+                    const isSelected = (editingResident.emergencyContactRelation || '') === rel;
+
+                    return (
+                      <div
+                        key={rel}
+                        className={`inline-flex items-center gap-0.5 text-[10px] rounded-full border transition-all duration-150 ${
+                          isSelected
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingResident({ ...editingResident, emergencyContactRelation: rel });
+                          }}
+                          className="pl-2.5 pr-1 py-1 cursor-pointer select-none font-medium text-left"
+                        >
+                          {rel}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`'${rel}' 관계 단축 키워드를 삭제하시겠습니까?`)) {
+                              handleDeleteRelationShortcut(rel);
+                              // 만약 선택되어 있던 관계였다면 비워줍니다
+                              if ((editingResident.emergencyContactRelation || '') === rel) {
+                                setEditingResident({ ...editingResident, emergencyContactRelation: '' });
+                              }
+                            }
+                          }}
+                          className={`pr-2.5 pl-0.5 py-1 text-[11px] font-bold cursor-pointer hover:font-black ${
+                            isSelected ? 'text-indigo-200 hover:text-white' : 'text-slate-400 hover:text-rose-600'
+                          }`}
+                          title="삭제"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingResident({ ...editingResident, emergencyContactRelation: '' });
+                    }}
+                    className={`text-[10px] px-2.5 py-1 rounded-full border transition-all duration-150 cursor-pointer ${
+                      (editingResident.emergencyContactRelation || '').trim() === '' || !existingRelations.includes(editingResident.emergencyContactRelation || '')
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    직접 입력
+                  </button>
+                </div>
+                {/* 주관식 입력 공간 (사용자 자유 편집 가능) */}
+                <input
+                  type="text"
+                  value={editingResident.emergencyContactRelation || ''}
+                  placeholder="예: 큰아들, 작은아들, 며느리, 요양보호사 등 자유롭게 기록"
+                  onChange={(e) => setEditingResident({ ...editingResident, emergencyContactRelation: e.target.value })}
+                  className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block font-semibold text-slate-700">담당자명 (주관식/선택)</label>
+                  <span className="text-[10px] text-slate-400">자주 쓰이거나 한 번이라도 입력한 담당자가 아래 탭으로 자동 등록됩니다 (삭제하려면 × 기호를 누르세요)</span>
+                </div>
+                {/* 담당 관리자 선택 탭 (단축 버튼) */}
+                <div className="flex flex-wrap gap-1 mb-2 font-medium">
+                  {existingManagers.map((mgr) => {
+                    const isSelected = (editingResident.managerName || '') === mgr;
+
+                    return (
+                      <div
+                        key={mgr}
+                        className={`inline-flex items-center gap-0.5 text-[10px] rounded-full border transition-all duration-150 ${
+                          isSelected
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingResident({ ...editingResident, managerName: mgr });
+                          }}
+                          className="pl-2.5 pr-1 py-1 cursor-pointer select-none font-medium text-left"
+                        >
+                          {mgr}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`'${mgr}' 담당자 단축 키워드를 삭제하시겠습니까?`)) {
+                              handleDeleteManagerShortcut(mgr);
+                              // 만약 선택되어 있던 담당자였다면 비워줍니다
+                              if ((editingResident.managerName || '') === mgr) {
+                                setEditingResident({ ...editingResident, managerName: '' });
+                              }
+                            }
+                          }}
+                          className={`pr-2.5 pl-0.5 py-1 text-[11px] font-bold cursor-pointer hover:font-black ${
+                            isSelected ? 'text-indigo-200 hover:text-white' : 'text-slate-400 hover:text-rose-600'
+                          }`}
+                          title="삭제"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingResident({ ...editingResident, managerName: '' });
+                    }}
+                    className={`text-[10px] px-2.5 py-1 rounded-full border transition-all duration-150 cursor-pointer ${
+                      (editingResident.managerName || '').trim() === '' || !existingManagers.includes(editingResident.managerName || '')
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    직접 입력
+                  </button>
+                </div>
+                {/* 주관식 입력 공간 */}
+                <input
+                  type="text"
+                  value={editingResident.managerName || ''}
+                  placeholder="예: 홍길동 사회복지사, 김철수 담당자 등 자유롭게 입력"
+                  onChange={(e) => setEditingResident({ ...editingResident, managerName: e.target.value })}
                   className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
                 />
               </div>

@@ -17,6 +17,8 @@ export interface Resident {
   disabilityType?: '없음' | '경증(4~5등급)' | '중증(1~3등급)';
   disabilityDetails?: string;
   isolationGroup?: '해당없음' | '관계지원군' | '일상지원군' | '일상위험고립군' | '집중관리군' | '긴급위기군';
+  emergencyContactRelation?: string;
+  managerName?: string;
 }
 
 export interface Participation {
