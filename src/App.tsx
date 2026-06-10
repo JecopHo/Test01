@@ -37,7 +37,7 @@ import { GOOGLE_APPS_SCRIPT_CODE } from './code.gs';
 import NetworkGraph from './components/NetworkGraph';
 
 // --- 구글 Apps Script Web App URL 고정 (하드코딩) ---
-const GOOGLE_WEB_APP_URL: string = "https://script.google.com/macros/s/AKfycbxkS72EtXQfVK1HW778ZzrUu63kKBKB5mtYjsWM9yJ_Aqv-dn1mTpuJMwn8cDB0-M8j/exec";
+const GOOGLE_WEB_APP_URL: string = "https://script.google.com/macros/s/AKfycbx2hzri9G444RzEDhF1jHvy5IcYUebtguOdbAWdbFsdyOYnzbdZN83twqabBiDWHWg_/exec";
 
 // --- 생년월일 및 연령 계산 파서 시스템 ---
 export const getResidentAgeNumber = (ageVal: string | number | undefined): number => {
@@ -209,20 +209,20 @@ export default function App() {
     setInputGasUrl(isGasConfigured ? GOOGLE_WEB_APP_URL.trim() : '');
     setInputGasEnabled(isGasConfigured);
 
+    // 구글 시트 연동 전이나, 혹은 통신에 실패할 상황을 대비해 일단 기본 로컬 가용 데이터(MOCK)로 무조건 선인입해 둡니다. (Safe Fallback)
+    setResidents(MOCK_RESIDENTS);
+    setParticipations(MOCK_PARTICIPATIONS);
+    setRelationships(MOCK_RELATIONSHIPS);
+
     if (isGasConfigured) {
       const url = GOOGLE_WEB_APP_URL.trim();
       setGasConfig({ url, isEnabled: true });
-      fetchFromGAS(url);
-    } else {
-      // 2. 비연동(체험 모드)일 때만 모크 데이터를 인메모리에 세팅
-      setResidents(MOCK_RESIDENTS);
-      setParticipations(MOCK_PARTICIPATIONS);
-      setRelationships(MOCK_RELATIONSHIPS);
+      fetchFromGAS(url, true);
     }
   }, []);
 
   // --- GAS 웹앱 시트 API 비동기 통신 메소드 ---
-  const fetchFromGAS = async (url: string) => {
+  const fetchFromGAS = async (url: string, isInitial: boolean = false) => {
     setIsLoading(true);
     setSyncStatus('idle');
     setSyncError(null);
@@ -251,8 +251,12 @@ export default function App() {
       setSyncStatus('error');
       const errorMsg = err.toString();
       setSyncError(errorMsg);
-      // 강력한 에러 표출 (alert)
-      alert(`[구글 시트 연동 실패: 데이터를 불러오는 도중 오류가 발생했습니다]\n\n에러 상세: ${err.message || err}`);
+      
+      // 처음 로딩(새로고침) 단계에서는 웹 앱 권한 설정(Anyone 미해제 등)에 의해 Failed to fetch가 발생할 수 있습니다.
+      // 따라서 빈 화면 대신 선입력된 모크데이터로 웹앱 체험을 제공하고, 무한 루프 얼럿 팝업을 방지하도록 경고를 수동 연동 시에만 얼럿 팝업으로 상세 출동시킵니다.
+      if (!isInitial) {
+        alert(`[구글 시트 연동 실패: 데이터를 불러오는 도중 오류가 발생했습니다]\n\n상세 원인: ${err.message || err}\n\n※ 구글 웹 앱의 배포 설정에서 액세스 권한이 '모든 사람(Anyone)'으로 완전 배포되었는지 확인해주셔야 합니다.`);
+      }
     } finally {
       setIsLoading(false);
     }

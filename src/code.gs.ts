@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export const GOOGLE_APPS_SCRIPT_CODE = `/**
+export const GOOGLE_APPS_SCRIPT_CODE = `const SPREADSHEET_ID = "1eK8jTZqqfs0kQNwqUqnj-fhNOtQpLgCr7afQiEN3fEU";
+
+/**
  * 구글 스프레드시트 기반 풀스택 주민 정보 & 관계망 관리 API
  * 
  * [설치 방법]
@@ -18,6 +20,8 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  *    - 웹 앱을 실행할 사용자: 나 (귀하의 구글 계정)
  *    - 액세스 권한이 있는 사용자: 모든 사람 (Anyone) - 로그인 없이 React 웹에서 접근해야 하므로 필수적입니다.
  * 8. [배포]를 클릭하고 약관에 동의(고급 -> 이동 클릭)한 후, 생성된 **웹 앱 URL**을 복사하여 웹사이트 설정 창에 입력하세요!
+ * 
+ * ※ 주의: 현재 SPREADSHEET_ID 변수에 고유 키가 고정 배치되어 작동합니다.
  */
 
 // 시트 이름 정의
@@ -130,7 +134,7 @@ function createJsonResponse(data) {
 
 // 초기화: 시트 생성 또는 누락 컬럼 자동 세팅 수행
 function initSpreadsheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   
   // 프론트엔드와 100% 매치되는 시트 스키마(헤더) 정의
   const expectedHeaders = {
@@ -180,7 +184,7 @@ function initSpreadsheet() {
 
 // 시트 전체 데이터를 JSON 오브젝트 배열로 읽기
 function getSheetData(sheetName) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
   const rows = sheet.getDataRange().getValues();
   if (rows.length <= 1) return []; // 데이터 없음 (헤더만 있음)
 
@@ -228,7 +232,7 @@ function getSheetData(sheetName) {
 
 // 데이터 삽입 및 업데이트 (id 기준으로 자동 식별 및 타임스탬프 충돌 감지)
 function saveRow(sheetName, item) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
   const rows = sheet.getDataRange().getValues();
   const headers = rows[0].map(function(h) { return h ? h.toString().trim() : ''; });
   
@@ -310,7 +314,7 @@ function saveRow(sheetName, item) {
 
 // 데이터 삭제
 function deleteRow(sheetName, id) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
   const rows = sheet.getDataRange().getValues();
   
   for (let i = 1; i < rows.length; i++) {
@@ -324,7 +328,7 @@ function deleteRow(sheetName, id) {
 
 // 주민이 탈퇴되거나 삭제될 시 연쇄 삭제 처리
 function cascadeDelete(residentId) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   
   // 참여이력 삭제
   const sPart = ss.getSheetByName(SHEETS.PARTICIPATION);
