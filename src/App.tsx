@@ -231,13 +231,13 @@ export default function App() {
       }
       const payload = await response.json();
       
-      if (payload.success && payload.data) {
-        const { residents: res, participations: part, relationships: rel } = payload.data;
-        // 빈 배열이어도 그대로 반영하여 구글 데이터와 완벽 일소 (SSOT)
-        setResidents(res || []);
-        setParticipations(part || []);
-        setRelationships(rel || []);
+      if (payload.success) {
+        const data = payload.data || {};
+        setResidents(data.residents || []);
+        setParticipations(data.participations || []);
+        setRelationships(data.relationships || []);
         setSyncStatus('success');
+        setSyncError(null);
       } else {
         throw new Error(payload.error || '스프레드시트 데이터를 로드하는 도중 오류가 발생했습니다.');
       }
