@@ -122,7 +122,7 @@ function initSpreadsheet() {
   let sResidents = ss.getSheetByName(SHEETS.RESIDENTS);
   if (!sResidents) {
     sResidents = ss.insertSheet(SHEETS.RESIDENTS);
-    sResidents.appendRow(['id', 'name', 'gender', 'age', 'phone', 'address', 'notes', 'registeredAt']);
+    sResidents.appendRow(['id', 'name', 'gender', 'age', 'basicPhone', 'phone', 'address', 'notes', 'registeredAt']);
   }
 
   // 참여이력 시트 체크

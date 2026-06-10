@@ -10,6 +10,7 @@ export interface Resident {
   age: number | string;
   phone: string;
   address: string;
+  basicPhone?: string;
   dong?: '면목 4동' | '면목 7동' | '면목 5동' | '면목 3·8동' | '기타 동';
   notes: string;
   registeredAt: string;

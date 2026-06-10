@@ -411,6 +411,7 @@ export default function App() {
       gender: (editingResident.gender || '여성') as '남성' | '여성',
       age: parsedAgeInfo.displayAge,
       phone: editingResident.phone || '010-0000-0000',
+      basicPhone: editingResident.basicPhone || '',
       address: editingResident.address || '미정',
       dong: editingResident.dong || '기타 동',
       notes: editingResident.notes || '',
@@ -687,6 +688,7 @@ export default function App() {
     return residents.filter(res => {
       const matchSearch = res.name.toLowerCase().includes(residentSearch.toLowerCase()) || 
                           res.phone.includes(residentSearch) || 
+                          (res.basicPhone && res.basicPhone.includes(residentSearch)) || 
                           (res.address && res.address.toLowerCase().includes(residentSearch.toLowerCase()));
       const matchGender = genderFilter === '모두' || res.gender === genderFilter;
       
@@ -950,8 +952,9 @@ export default function App() {
                       setEditingResident({
                         name: '',
                         gender: '여성',
-                        age: 78,
+                        age: '',
                         phone: '',
+                        basicPhone: '',
                         address: '',
                         dong: '면목 4동',
                         notes: '',
@@ -1057,7 +1060,20 @@ export default function App() {
                               </span>
                               {typeof res.age === 'number' || !isNaN(Number(res.age)) ? `${res.age}세` : res.age}
                             </td>
-                            <td className="p-2.5 text-slate-600 font-mono">{res.phone}</td>
+                            <td className="p-2.5 text-slate-600 font-mono text-xs">
+                              {res.basicPhone ? (
+                                <div className="text-[11px] text-slate-800 font-medium" title="기본 연락처">
+                                  <span className="text-[9px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.2 mr-1">기본</span>
+                                  {res.basicPhone}
+                                </div>
+                              ) : (
+                                <div className="text-[11px] text-slate-300 font-normal italic">기본 연락처 없음</div>
+                              )}
+                              <div className="text-[10px] text-slate-500 mt-1" title="안부 비상연락처">
+                                <span className="text-[9px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.2 mr-1">안부</span>
+                                {res.phone || '010-0000-0000'}
+                              </div>
+                            </td>
                             <td className="p-2.5 text-slate-500 max-w-xs truncate">
                               <span className="inline-block bg-indigo-50 text-indigo-700 text-[10px] px-1 py-0.2 rounded font-medium mr-1">
                                 {res.dong || '기타 동'}
@@ -1144,6 +1160,10 @@ export default function App() {
                           </span>
                         </div>
                       )}
+                      <div>
+                        <span className="font-semibold text-slate-500 block text-[10px]">📱 기본 연락처</span>
+                        <span className="font-mono text-slate-800">{selectedResident.basicPhone || '등록 대기'}</span>
+                      </div>
                       <div>
                         <span className="font-semibold text-slate-500 block text-[10px]">📞 안부 비상연락처</span>
                         <span className="font-mono text-slate-800">{selectedResident.phone || '등록대기'}</span>
@@ -1743,6 +1763,7 @@ export default function App() {
                   <input
                     type="text"
                     required
+                    placeholder="예: 홍길동"
                     value={editingResident.name || ''}
                     onChange={(e) => setEditingResident({ ...editingResident, name: e.target.value })}
                     className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
@@ -1767,21 +1788,32 @@ export default function App() {
                   <input
                     type="text"
                     value={editingResident.age || ''}
-                    placeholder="예: 94.01.01 (상세입력) 또는 숫자"
+                    placeholder="예: 1234.56.78"
                     onChange={(e) => setEditingResident({ ...editingResident, age: e.target.value })}
                     className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">안부 비상연락처</label>
+                  <label className="block font-semibold text-slate-700 mb-1">기본 연락처</label>
                   <input
                     type="text"
-                    value={editingResident.phone || ''}
-                    placeholder="010-0000-0000"
-                    onChange={(e) => setEditingResident({ ...editingResident, phone: e.target.value })}
+                    value={editingResident.basicPhone || ''}
+                    placeholder="예: 010-1234-5678 (본인)"
+                    onChange={(e) => setEditingResident({ ...editingResident, basicPhone: e.target.value })}
                     className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">안부 비상연락처</label>
+                <input
+                  type="text"
+                  value={editingResident.phone || ''}
+                  placeholder="예: 010-5678-8765 (자녀 또는 이웃 비상 연락망)"
+                  onChange={(e) => setEditingResident({ ...editingResident, phone: e.target.value })}
+                  className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500"
+                />
               </div>
 
                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
