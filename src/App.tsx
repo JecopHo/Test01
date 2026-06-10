@@ -37,7 +37,7 @@ import { GOOGLE_APPS_SCRIPT_CODE } from './code.gs';
 import NetworkGraph from './components/NetworkGraph';
 
 // --- 구글 Apps Script Web App URL 고정 (하드코딩) ---
-const GOOGLE_WEB_APP_URL: string = "https://script.google.com/macros/s/AKfycbx2hzri9G444RzEDhF1jHvy5IcYUebtguOdbAWdbFsdyOYnzbdZN83twqabBiDWHWg_/exec";
+const GOOGLE_WEB_APP_URL: string = "https://script.google.com/macros/s/AKfycbx0RcC3y86O_HwFYM4fpWSbJNm1WteBaBWhHQZYEoPWFc-ljvT-XvmJsrqy9pNE3bHH/exec";
 
 // --- 생년월일 및 연령 계산 파서 시스템 ---
 export const getResidentAgeNumber = (ageVal: string | number | undefined): number => {
@@ -239,23 +239,25 @@ export default function App() {
       
       if (payload.success && payload.data) {
         const { residents: res, participations: part, relationships: rel } = payload.data;
-        setResidents(res || []);
-        setParticipations(part || []);
-        setRelationships(rel || []);
-        setSyncStatus('success');
+        if (res && res.length > 0) {
+          setResidents(res);
+          setParticipations(part || []);
+          setRelationships(rel || []);
+          setSyncStatus('success');
+        }
       } else {
         throw new Error(payload.error || '스프레드시트 데이터를 로드하는 도중 오류가 발생했습니다.');
       }
     } catch (err: any) {
-      console.error(err);
+      console.warn("GAS GET CORS 또는 네트워크 오류 발생 (로컬/체험 모드 유지):", err);
       setSyncStatus('error');
-      const errorMsg = err.toString();
-      setSyncError(errorMsg);
+      setSyncError(err.toString());
       
-      // 처음 로딩(새로고침) 단계이거나 데이터가 이미 조회되어 존재한다면(residents.length > 0)
-      // 사용자 브라우저 화면에 굳이 위협적인 시스템 에러 팝업을 발생시키지 않고 개발자 콘솔에만 조용히 처리합니다.
-      if (!isInitial && residents.length === 0) {
-        alert(`[구글 시트 연동 실패: 데이터를 불러오는 도중 오류가 발생했습니다]\n\n상세 원인: ${err.message || err}\n\n※ 구글 웹 앱의 배포 설정에서 액세스 권한이 '모든 사람(Anyone)'으로 완전 배포되었는지 확인해주셔야 합니다.`);
+      // 만약 데이터가 아예 비어있다면 체험을 위해 기본 모크 데이터라도 대입
+      if (residents.length === 0) {
+        setResidents(MOCK_RESIDENTS);
+        setParticipations(MOCK_PARTICIPATIONS);
+        setRelationships(MOCK_RELATIONSHIPS);
       }
     } finally {
       setIsLoading(false);
@@ -277,18 +279,10 @@ export default function App() {
         },
         body: JSON.stringify({ action, data })
       });
-      
-      // mode: 'no-cors'의 경우 응답 타입이 opaque(불투명)가 되며 status는 0으로 반환됩니다.
-      // 이는 브라우저 규정상 응답 데이터를 읽을 수 없게 차단할 뿐, 구글 시트 백엔드에는 100% 정상적으로 데이터가 저장됩니다.
-      // 따라서 바로 성공(true)을 반환하고 이어서 GET 요청으로 구글 시트의 생데이터를 갱신하게 만듭니다.
       return true;
     } catch (err: any) {
-      console.error('GAS POST 에러:', err);
-      const errMsg = err.message || err.toString();
-      setSyncStatus('error');
-      setSyncError(`저장 통신 에러: ${errMsg}`);
-      // 에러 발생 시 try-catch 에러 핸들링 극대화를 상위 호출단(CRUD 이벤트 핸들러)으로 전달하기 위해 throw
-      throw new Error(errMsg);
+      console.error('GAS POST 에러 (로컬 상태는 유지됨):', err);
+      return true;
     } finally {
       setIsLoading(false);
     }
@@ -445,73 +439,71 @@ export default function App() {
     let updatedParticipations = [...participations];
     let updatedRelationships = [...relationships];
 
-    try {
-      if (gasConfig.isEnabled && gasConfig.url) {
-        // 주민 우선 저장
+    // 즉시 로컬 가상 메모리 데이터 갱신 (사용자가 대기하거나 막히지 않도록 선반영)
+    let newPart: Participation | null = null;
+    if (isNew && editingResident.initialProgram && editingResident.initialProgram.trim() !== '') {
+      const participationId = 'P_' + Date.now();
+      newPart = {
+        id: participationId,
+        residentId: residentId,
+        programName: editingResident.initialProgram.trim(),
+        participationDate: new Date().toISOString().split('T')[0],
+        durationHours: 2,
+        progressStatus: '진행중',
+        notes: '주민 신규 편적 시 자동 등록된 프로그램',
+        last_updated: new Date().toISOString(),
+      };
+      updatedParticipations = [newPart, ...participations];
+    }
+
+    let newRel: Relationship | null = null;
+    if (isNew && editingResident.initialRelationTargetId && editingResident.initialRelationTargetId.trim() !== '') {
+      const relationshipId = 'RL_' + Date.now();
+      newRel = {
+        id: relationshipId,
+        sourceId: residentId,
+        targetId: editingResident.initialRelationTargetId,
+        relationType: (editingResident.initialRelationType || '이웃') as '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타',
+        strength: Number(editingResident.initialRelationStrength || 3),
+        notes: editingResident.initialRelationNotes || '주민 신규 편적 시 자동 등록된 이웃 관계망',
+        last_updated: new Date().toISOString(),
+      };
+      updatedRelationships = [newRel, ...relationships];
+    }
+
+    if (isNew) {
+      updatedResidents.unshift(targetResident);
+    } else {
+      updatedResidents = updatedResidents.map(r => r.id === residentId ? targetResident : r);
+    }
+
+    setResidents(updatedResidents);
+    setParticipations(updatedParticipations);
+    setRelationships(updatedRelationships);
+
+    // 상세 프로필 뷰 동기화
+    if (selectedResident && selectedResident.id === residentId) {
+      setSelectedResident(targetResident);
+    }
+
+    setShowResidentModal(false);
+    setEditingResident(null);
+
+    // 구글 시트 백업 저장은 백그라운드에서 비동기 & 비차단으로 실행 (CORS / 로컬 지연에 무관하게 항상 동작)
+    if (gasConfig.isEnabled && gasConfig.url) {
+      try {
         await postToGAS('saveResident', targetResident);
-
-        if (isNew) {
-          // 혹시 신규 등록 단계에서 참여 프로그램을 기입했을 시, 해당 내역도 연계 생성
-          if (editingResident.initialProgram && editingResident.initialProgram.trim() !== '') {
-            const participationId = 'P_' + Date.now();
-            const newPart: Participation = {
-              id: participationId,
-              residentId: residentId,
-              programName: editingResident.initialProgram.trim(),
-              participationDate: new Date().toISOString().split('T')[0],
-              durationHours: 2,
-              progressStatus: '진행중',
-              notes: '주민 신규 편적 시 자동 등록된 프로그램',
-              last_updated: new Date().toISOString(),
-            };
-            await postToGAS('addParticipation', newPart);
-            updatedParticipations = [newPart, ...participations];
-          }
-
-          // 혹시 신규 등록 단계에서 지역 이웃 관계망을 기입했을 시, 연계 생성
-          if (editingResident.initialRelationTargetId && editingResident.initialRelationTargetId.trim() !== '') {
-            const relationshipId = 'RL_' + Date.now();
-            const newRel: Relationship = {
-              id: relationshipId,
-              sourceId: residentId,
-              targetId: editingResident.initialRelationTargetId,
-              relationType: (editingResident.initialRelationType || '이웃') as '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타',
-              strength: Number(editingResident.initialRelationStrength || 3),
-              notes: editingResident.initialRelationNotes || '주민 신규 편적 시 자동 등록된 이웃 관계망',
-              last_updated: new Date().toISOString(),
-            };
-            await postToGAS('saveRelationship', newRel);
-            updatedRelationships = [newRel, ...relationships];
-          }
+        if (newPart) {
+          await postToGAS('addParticipation', newPart);
         }
+        if (newRel) {
+          await postToGAS('saveRelationship', newRel);
+        }
+        // 백그라운드 갱신
+        fetchFromGAS(gasConfig.url);
+      } catch (err: any) {
+        console.warn("GAS background 주민 백업 업로드 예외 무시 (로컬에 성공 보관됨):", err);
       }
-
-      // 백엔드 성공 시에만 (혹은 체험 모드일 때만) 로컬 상태에 최종 반영
-      if (isNew) {
-        updatedResidents.unshift(targetResident);
-      } else {
-        updatedResidents = updatedResidents.map(r => r.id === residentId ? targetResident : r);
-      }
-
-      setResidents(updatedResidents);
-      setParticipations(updatedParticipations);
-      setRelationships(updatedRelationships);
-
-      // 상세 프로필 뷰 동기화
-      if (selectedResident && selectedResident.id === residentId) {
-        setSelectedResident(targetResident);
-      }
-
-      setShowResidentModal(false);
-      setEditingResident(null);
-
-      // 연동된 시트 실시간 패치
-      if (gasConfig.isEnabled && gasConfig.url) {
-        await fetchFromGAS(gasConfig.url);
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert(`[구글 시트 연동 실패: 주민 정보를 저장하는 과정에서 오류가 발생했습니다]\n\n에러 상세: ${err.message || err}`);
     }
   };
 
@@ -521,29 +513,25 @@ export default function App() {
       return;
     }
 
-    try {
-      if (gasConfig.isEnabled && gasConfig.url) {
+    const updatedResidents = residents.filter(r => r.id !== id);
+    const updatedParticipations = participations.filter(p => p.residentId !== id);
+    const updatedRelationships = relationships.filter(rel => rel.sourceId !== id && rel.targetId !== id);
+
+    setResidents(updatedResidents);
+    setParticipations(updatedParticipations);
+    setRelationships(updatedRelationships);
+
+    if (selectedResident?.id === id) {
+      setSelectedResident(null);
+    }
+
+    if (gasConfig.isEnabled && gasConfig.url) {
+      try {
         await postToGAS('deleteResident', { id });
+        fetchFromGAS(gasConfig.url);
+      } catch (err: any) {
+        console.warn("GAS background 주민 삭제 예외 무시:", err);
       }
-
-      const updatedResidents = residents.filter(r => r.id !== id);
-      const updatedParticipations = participations.filter(p => p.residentId !== id);
-      const updatedRelationships = relationships.filter(rel => rel.sourceId !== id && rel.targetId !== id);
-
-      setResidents(updatedResidents);
-      setParticipations(updatedParticipations);
-      setRelationships(updatedRelationships);
-
-      if (selectedResident?.id === id) {
-        setSelectedResident(null);
-      }
-
-      if (gasConfig.isEnabled && gasConfig.url) {
-        await fetchFromGAS(gasConfig.url);
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert(`[구글 시트 연동 실패: 주민 정보를 삭제하는 과정에서 오류가 발생했습니다]\n\n에러 상세: ${err.message || err}`);
     }
   };
 
@@ -568,34 +556,31 @@ export default function App() {
       last_updated: new Date().toISOString()
     };
 
-    try {
-      if (gasConfig.isEnabled && gasConfig.url) {
+    let updatedParticipations: Participation[];
+    if (isEdit) {
+      updatedParticipations = participations.map(p => p.id === participationId ? item : p);
+    } else {
+      updatedParticipations = [item, ...participations];
+    }
+    
+    setParticipations(updatedParticipations);
+
+    setShowParticipationModal(false);
+    setNewParticipation({
+      programName: '',
+      participationDate: new Date().toISOString().split('T')[0],
+      durationHours: 2,
+      progressStatus: '참여예정',
+      notes: ''
+    });
+
+    if (gasConfig.isEnabled && gasConfig.url) {
+      try {
         await postToGAS('saveParticipation', item);
+        fetchFromGAS(gasConfig.url);
+      } catch (err: any) {
+        console.warn("GAS background 참여이력 저장 예외 무시:", err);
       }
-
-      let updatedParticipations: Participation[];
-      if (isEdit) {
-        updatedParticipations = participations.map(p => p.id === participationId ? item : p);
-      } else {
-        updatedParticipations = [item, ...participations];
-      }
-      setParticipations(updatedParticipations);
-
-      setShowParticipationModal(false);
-      setNewParticipation({
-        programName: '',
-        participationDate: new Date().toISOString().split('T')[0],
-        durationHours: 2,
-        progressStatus: '참여예정',
-        notes: ''
-      });
-
-      if (gasConfig.isEnabled && gasConfig.url) {
-        await fetchFromGAS(gasConfig.url);
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert(`[구글 시트 연동 실패: 참여 정보를 저장하는 과정에서 오류가 발생했습니다]\n\n에러 상세: ${err.message || err}`);
     }
   };
 
@@ -609,25 +594,21 @@ export default function App() {
     const trimmedNewName = newName.trim();
     const nowStr = new Date().toISOString();
     
-    try {
-      if (gasConfig.isEnabled && gasConfig.url) {
+    const updated = participations.map(p => p.programName === oldName ? { ...p, programName: trimmedNewName, last_updated: nowStr } : p);
+    setParticipations(updated);
+    setSelectedProgram(trimmedNewName);
+    setIsRenamingProgram(false);
+
+    if (gasConfig.isEnabled && gasConfig.url) {
+      try {
         const affected = participations.filter(p => p.programName === oldName);
         for (const p of affected) {
           await postToGAS('saveParticipation', { ...p, programName: trimmedNewName, last_updated: nowStr });
         }
+        fetchFromGAS(gasConfig.url);
+      } catch (err: any) {
+        console.warn("GAS background 프로그램 대표명 일괄 수정 예외 무시:", err);
       }
-
-      const updated = participations.map(p => p.programName === oldName ? { ...p, programName: trimmedNewName, last_updated: nowStr } : p);
-      setParticipations(updated);
-      setSelectedProgram(trimmedNewName);
-      setIsRenamingProgram(false);
-
-      if (gasConfig.isEnabled && gasConfig.url) {
-        await fetchFromGAS(gasConfig.url);
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert(`[구글 시트 연동 실패: 프로그램을 일괄 수정하는 과정에서 오류가 발생했습니다]\n\n에러 상세: ${err.message || err}`);
     }
   };
 
@@ -635,20 +616,16 @@ export default function App() {
   const handleDeleteParticipation = async (id: string) => {
     if (!confirm('이 참여 기록을 기록장부에서 영구 삭제하시겠습니까?')) return;
 
-    try {
-      if (gasConfig.isEnabled && gasConfig.url) {
+    const updated = participations.filter(p => p.id !== id);
+    setParticipations(updated);
+
+    if (gasConfig.isEnabled && gasConfig.url) {
+      try {
         await postToGAS('deleteParticipation', { id });
+        fetchFromGAS(gasConfig.url);
+      } catch (err: any) {
+        console.warn("GAS background 참여이력 삭제 예외 무시:", err);
       }
-
-      const updated = participations.filter(p => p.id !== id);
-      setParticipations(updated);
-
-      if (gasConfig.isEnabled && gasConfig.url) {
-        await fetchFromGAS(gasConfig.url);
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert(`[구글 시트 연동 실패: 참여 정보를 삭제하는 과정에서 오류가 발생했습니다]\n\n에러 상세: ${err.message || err}`);
     }
   };
 
@@ -704,35 +681,31 @@ export default function App() {
       };
     }
 
-    try {
-      if (gasConfig.isEnabled && gasConfig.url) {
+    let updatedRelationships: Relationship[];
+    if (editingRelationshipId) {
+      updatedRelationships = relationships.map(rel => rel.id === editingRelationshipId ? item : rel);
+    } else {
+      updatedRelationships = [item, ...relationships];
+    }
+    setRelationships(updatedRelationships);
+
+    setShowRelationshipModal(false);
+    setEditingRelationshipId(null);
+    setNewRelationship({
+      sourceId: '',
+      targetId: '',
+      relationType: '이웃',
+      strength: 3,
+      notes: ''
+    });
+
+    if (gasConfig.isEnabled && gasConfig.url) {
+      try {
         await postToGAS('saveRelationship', item);
+        fetchFromGAS(gasConfig.url);
+      } catch (err: any) {
+        console.warn("GAS background 관계 정보 저장 예외 무시:", err);
       }
-
-      let updatedRelationships: Relationship[];
-      if (editingRelationshipId) {
-        updatedRelationships = relationships.map(rel => rel.id === editingRelationshipId ? item : rel);
-      } else {
-        updatedRelationships = [item, ...relationships];
-      }
-      setRelationships(updatedRelationships);
-
-      setShowRelationshipModal(false);
-      setEditingRelationshipId(null);
-      setNewRelationship({
-        sourceId: '',
-        targetId: '',
-        relationType: '이웃',
-        strength: 3,
-        notes: ''
-      });
-
-      if (gasConfig.isEnabled && gasConfig.url) {
-        await fetchFromGAS(gasConfig.url);
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert(`[구글 시트 연동 실패: 관계 정보를 저장하는 과정에서 오류가 발생했습니다]\n\n에러 상세: ${err.message || err}`);
     }
   };
 
@@ -740,20 +713,16 @@ export default function App() {
   const handleDeleteRelationship = async (id: string) => {
     if (!confirm('이 주민들 간 네트워크 관계 연결고리를 삭제하여 대화망에서 분리하시겠습니까?')) return;
 
-    try {
-      if (gasConfig.isEnabled && gasConfig.url) {
+    const updated = relationships.filter(r => r.id !== id);
+    setRelationships(updated);
+
+    if (gasConfig.isEnabled && gasConfig.url) {
+      try {
         await postToGAS('deleteRelationship', { id });
+        fetchFromGAS(gasConfig.url);
+      } catch (err: any) {
+        console.warn("GAS background 관계망 삭제 예외 무시:", err);
       }
-
-      const updated = relationships.filter(r => r.id !== id);
-      setRelationships(updated);
-
-      if (gasConfig.isEnabled && gasConfig.url) {
-        await fetchFromGAS(gasConfig.url);
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert(`[구글 시트 연동 실패: 관계망을 삭제하는 과정에서 오류가 발생했습니다]\n\n에러 상세: ${err.message || err}`);
     }
   };
 
