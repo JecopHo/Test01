@@ -418,6 +418,7 @@ export default function App() {
       registeredAt: editingResident.registeredAt || new Date().toISOString().split('T')[0],
       disabilityType: editingResident.disabilityType || '없음',
       disabilityDetails: editingResident.disabilityDetails || '',
+      isolationGroup: editingResident.isolationGroup || '해당없음',
     };
 
     let updatedParticipations = [...participations];
@@ -722,21 +723,14 @@ export default function App() {
     const female = residents.filter(r => r.gender === '여성').length;
     const male = residents.filter(r => r.gender === '남성').length;
     
-    // 외톨이 / 무관계(Isolated) 선별
-    const isolatedCount = residents.filter(r => {
-      const linksCount = relationships.filter(rel => 
-        (rel.sourceId === r.id || rel.targetId === r.id) &&
-        residents.some(x => x.id === rel.sourceId) &&
-        residents.some(x => x.id === rel.targetId)
-      ).length;
-      return linksCount === 0;
-    }).length;
+    // 외톨이 / 무관계(Isolated) 선별 -> 실 등록 고립 단계군 대상 집계 (해당없음 제외)
+    const isolatedCount = residents.filter(r => r.isolationGroup && r.isolationGroup !== '해당없음').length;
 
     // 진행 프로그램 종목 수 추출
     const programKinds = Array.from(new Set(participations.map(p => p.programName))).length;
 
     return { total, female, male, isolatedCount, programKinds };
-  }, [residents, relationships, participations]);
+  }, [residents, participations]);
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans text-slate-800 flex flex-col" id="service-root">
@@ -817,14 +811,40 @@ export default function App() {
             </div>
           </div>
 
-          <div className="bg-white p-3 rounded border border-slate-200 shadow-sm flex items-center gap-3">
-            <div className="p-2.5 bg-rose-50 text-rose-600 rounded">
-              <AlertTriangle className="w-5 h-5" />
+          <div className="bg-white p-3 rounded border border-slate-200 shadow-sm flex flex-col justify-between col-span-2 md:col-span-4 lg:col-span-1" id="isolation-group-stats-card">
+            <div className="flex items-center justify-between border-b border-rose-100 pb-1 mb-1">
+              <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider">고립 위기군별 현황 ({dashboardStats.isolatedCount}명)</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-550 animate-pulse"></span>
             </div>
-            <div>
-              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">고립 위기선별</div>
-              <div className="text-xl font-bold text-rose-600">{dashboardStats.isolatedCount}명</div>
-              <div className="text-[10px] text-rose-500 mt-0.5">이웃 관계 단절 위험 대상</div>
+            <div className="space-y-1 text-[10px] mt-1.5">
+              {(() => {
+                const totalCount = residents.length || 1;
+                const groups = [
+                  { name: '관계지원군', color: 'bg-indigo-500' },
+                  { name: '일상지원군', color: 'bg-emerald-550' },
+                  { name: '일상위험고립군', color: 'bg-amber-500' },
+                  { name: '집중관리군', color: 'bg-orange-500' },
+                  { name: '긴급위기군', color: 'bg-red-600' }
+                ];
+                return groups.map(g => {
+                  const count = residents.filter(r => r.isolationGroup === g.name).length;
+                  const percentage = Math.round((count / totalCount) * 100);
+                  return (
+                    <div key={g.name} className="space-y-0.5">
+                      <div className="flex justify-between items-center text-slate-600">
+                        <span className="font-medium text-slate-700">{g.name}</span>
+                        <span className="font-semibold text-slate-900 font-mono">{count}명 ({percentage}%)</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1">
+                        <div
+                          className={`${g.color} h-1 rounded-full transition-all duration-300`}
+                          style={{ width: `${percentage}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
 
@@ -958,6 +978,7 @@ export default function App() {
                         address: '',
                         dong: '면목 4동',
                         notes: '',
+                        isolationGroup: '해당없음',
                         initialProgram: '',
                         initialRelationTargetId: '',
                         initialRelationType: '이웃',
@@ -1083,8 +1104,8 @@ export default function App() {
                             <td className="p-2.5">
                               <span className="bg-blue-50 text-blue-700 font-bold px-1.5 py-0.5 rounded mr-1">{partCount}</span>
                               <span className="bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.5 rounded">{relCount}</span>
-                              {relCount === 0 && (
-                                <span className="ml-2 bg-red-100 text-red-700 text-[9px] px-1.5 py-0.5 rounded font-bold">고립위험</span>
+                              {res.isolationGroup && res.isolationGroup !== '해당없음' && (
+                                <span className="ml-2 bg-rose-100 text-rose-700 text-[9px] px-1.5 py-0.5 rounded font-bold">{res.isolationGroup}</span>
                               )}
                             </td>
                             <td className="p-2.5 text-right">
@@ -1144,6 +1165,11 @@ export default function App() {
                     }`}>
                       {selectedResident.gender} ({typeof selectedResident.age === 'number' || !isNaN(Number(selectedResident.age)) ? `만 ${selectedResident.age}세` : selectedResident.age})
                     </span>
+                    {selectedResident.isolationGroup && selectedResident.isolationGroup !== '해당없음' && (
+                      <span className="ml-1.5 text-[9px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200 uppercase">
+                        🚨 {selectedResident.isolationGroup}
+                      </span>
+                    )}
                     <h3 className="text-sm font-bold text-slate-900 mt-1">{selectedResident.name} 어르신 상세 프로파일</h3>
                     <p className="text-[10px] text-slate-400">등록일: {selectedResident.registeredAt}</p>
                   </div>
@@ -1152,6 +1178,16 @@ export default function App() {
                   <div className="flex-1 overflow-y-auto pr-1 space-y-4 max-h-[60vh] xl:max-h-[700px] scrollbar-thin">
                     {/* 인적 사유 정보 */}
                     <div className="space-y-2 text-xs text-slate-700 bg-slate-50 p-2.5 rounded border border-slate-200">
+                      <div>
+                        <span className="font-semibold text-slate-500 block text-[10px]">🛑 사회적 고립 분류군</span>
+                        <span className={`text-[11px] font-bold border rounded px-2 py-0.5 inline-block mt-1 ${
+                          selectedResident.isolationGroup && selectedResident.isolationGroup !== '해당없음'
+                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}>
+                          {selectedResident.isolationGroup || '해당없음 (일반관리)'}
+                        </span>
+                      </div>
                       {selectedResident.disabilityType && selectedResident.disabilityType !== '없음' && (
                         <div>
                           <span className="font-semibold text-slate-500 block text-[10px]">♿ 장애 분류 ({selectedResident.disabilityType})</span>
@@ -1866,6 +1902,22 @@ export default function App() {
                     className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500 h-[34px] disabled:bg-slate-50 disabled:text-slate-400"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-705 mb-1">사회적 고립 상태 분류</label>
+                <select
+                  value={editingResident.isolationGroup || '해당없음'}
+                  onChange={(e) => setEditingResident({ ...editingResident, isolationGroup: e.target.value as any })}
+                  className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500 h-[34px]"
+                >
+                  <option value="해당없음">해당없음 (일반관리)</option>
+                  <option value="관계지원군">관계지원군</option>
+                  <option value="일상지원군">일상지원군</option>
+                  <option value="일상위험고립군">일상위험고립군</option>
+                  <option value="집중관리군">집중관리군</option>
+                  <option value="긴급위기군">긴급위기군</option>
+                </select>
               </div>
 
               {!editingResident.id && (

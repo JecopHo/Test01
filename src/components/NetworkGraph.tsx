@@ -23,6 +23,7 @@ interface GraphNode extends d3.SimulationNodeDatum {
   isIsolated: boolean;
   notes: string;
   disabilityType?: string;
+  isolationGroup?: string;
 }
 
 interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
@@ -80,13 +81,10 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
     });
   }, [relationships, selectedRelationType, minStrength, residents]);
 
-  // 그래프 노드 목록 구성 (고립 여부 자동 탐색)
+  // 그래프 노드 목록 구성 (고립여부 수동 지정값 반영)
   const graphNodes = useMemo(() => {
     return residents.map(res => {
-      // 해당 주민과 연결된 유효한 연결선 개수 조사
-      const connectionCount = filteredLinks.filter(
-        link => link.sourceId === res.id || link.targetId === res.id
-      ).length;
+      const isIsolated = !!res.isolationGroup && res.isolationGroup !== '해당없음';
 
       return {
         id: res.id,
@@ -94,11 +92,12 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
         gender: res.gender,
         age: res.age,
         notes: res.notes,
-        isIsolated: connectionCount === 0,
+        isIsolated: isIsolated,
+        isolationGroup: res.isolationGroup || '해당없음',
         disabilityType: res.disabilityType
       } as GraphNode;
     });
-  }, [residents, filteredLinks]);
+  }, [residents]);
 
   // 고립된 주민 리스트 추출
   const isolatedResidents = useMemo(() => {
@@ -234,7 +233,7 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
           <div class="px-3 py-2 text-xs bg-white text-gray-800 border border-gray-200 rounded shadow-xl max-w-xs leading-relaxed">
             <p class="font-bold text-gray-900 text-sm flex items-center gap-1.5">
               ${d.name} <span class="text-xs text-gray-500 font-normal">(${d.gender}, ${typeof d.age === 'number' || !isNaN(Number(d.age)) ? `${d.age}세` : d.age})</span>
-              ${d.isIsolated ? '<span class="bg-red-100 text-red-700 text-[10px] px-1 rounded font-normal">고립선별</span>' : ''}
+              ${d.isIsolated ? `<span class="bg-red-50 text-red-700 border border-red-250 text-[10px] px-1.5 py-0.2 rounded font-semibold">${d.isolationGroup}</span>` : ''}
             </p>
             <p class="mt-1 text-gray-600 line-clamp-3 bg-gray-50 p-1.5 rounded text-[11px]">${d.notes || '기록된 복지 특이조건이 없습니다.'}</p>
             <p class="mt-1 text-[10px] text-gray-400">💡 클릭하면 해당 주민의 상세 프로파일로 즉시 이동합니다.</p>
@@ -447,14 +446,31 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
       .attr('fill', '#ffffff')
       .text(d => d.name.substring(0, 3));
 
-    // 9. 노드 바로 아래에 세부 데이터 레이블
-    node.append('text')
+    // 9. 노드 바로 아래에 세부 데이터 레이블 (이름 및 고립 위기 분류군 동시 표기)
+    const labels = node.append('text')
       .attr('text-anchor', 'middle')
       .attr('dy', '2.1em')
+      .attr('fill', '#374151');
+
+    labels.append('tspan')
+      .attr('x', 0)
       .attr('font-size', '11px')
-      .attr('font-weight', '500')
-      .attr('fill', '#374151')
-      .text(d => `${d.name} (${typeof d.age === 'number' || !isNaN(Number(d.age)) ? `${d.age}세` : d.age})`);
+      .attr('font-weight', '600')
+      .text(d => `${d.name}(${typeof d.age === 'number' || !isNaN(Number(d.age)) ? `${d.age}세` : d.age})`);
+
+    labels.append('tspan')
+      .attr('x', 0)
+      .attr('dy', '1.25em')
+      .attr('font-size', '9px')
+      .attr('font-weight', 'bold')
+      .attr('fill', d => {
+        if (d.isolationGroup === '긴급위기군') return '#dc2626';
+        if (d.isolationGroup === '집중관리군') return '#ea580c';
+        if (d.isolationGroup === '일상위험고립군') return '#d97706';
+        if (d.isolationGroup === '일상지원군') return '#059669';
+        return '#4f46e5';
+      })
+      .text(d => d.isolationGroup && d.isolationGroup !== '해당없음' ? `[${d.isolationGroup}]` : '');
 
     // 시뮬레이션 매프레임 갱신 리스너
     simulation.on('tick', () => {
@@ -592,66 +608,70 @@ export default function NetworkGraph({ residents, relationships, onSelectResiden
 
         <hr className="border-slate-200" />
 
-        {/* 사회 복적 모니터링: 1인 가구 및 고립 경보 */}
+        {/* 사회 복지 모니터링: 고립군 및 경보 명단 */}
         <div className="flex-1 flex flex-col justify-between gap-3">
           <div>
             <h4 className="text-xs font-bold text-red-650 flex items-center gap-1.5 mb-2">
               <UserMinus className="w-4 h-4" />
-              고립 위기 어르신 모니터링 ({isolatedResidents.length}명)
+              고립 위기 주민 모니터링 ({isolatedResidents.length}명)
             </h4>
-            <p className="text-[10px] text-slate-500 leading-relaxed mb-2.5">
-              현재 필터 설정 기준, 마을 다른 주민들과 연결고리(이웃, 친구, 돌봄)가 등록되지 않은 '초고독 고립선별' 영가구 명단입니다.
+            <p className="text-[10px] text-slate-505 leading-relaxed mb-2.5">
+              주민 정보에서 등록된 해당없음을 제외한 고립위기 단계군 대상 주민 명단입니다.
             </p>
 
             {isolatedResidents.length > 0 ? (
               <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                 {isolatedResidents.map(r => (
                   <button
-                    key={r.id}
-                    onClick={() => {
-                      const found = residents.find(res => res.id === r.id);
-                      if (found) onSelectResident(found);
-                      setHighlightedNodeId(r.id);
-                    }}
-                    className="w-full text-left p-2 rounded border border-red-150 bg-red-50/50 hover:bg-red-50 transition-colors flex items-center justify-between cursor-pointer"
-                  >
-                    <div>
-                      <div className="text-[11px] font-bold text-slate-900">{r.name} ({typeof r.age === 'number' || !isNaN(Number(r.age)) ? `${r.age}세` : r.age})</div>
-                      <div className="text-[10px] text-red-700 font-medium mt-0.5 line-clamp-1">{r.notes || '연결 자원이 전혀 수집되지 않음'}</div>
-                    </div>
-                    <span className="text-[10px] uppercase font-bold text-red-650 bg-white border border-red-200 px-1.5 py-0.5 rounded">
-                      고위험
-                    </span>
+                     key={r.id}
+                     onClick={() => {
+                       const found = residents.find(res => res.id === r.id);
+                       if (found) onSelectResident(found);
+                       setHighlightedNodeId(r.id);
+                     }}
+                     className="w-full text-left p-2 rounded border border-red-150 bg-red-50/50 hover:bg-red-50 transition-colors flex items-center justify-between cursor-pointer"
+                   >
+                     <div>
+                       <div className="text-[11px] font-bold text-slate-900">{r.name} ({typeof r.age === 'number' || !isNaN(Number(r.age)) ? `${r.age}세` : r.age})</div>
+                       <div className="text-[10px] text-slate-500 font-medium mt-0.5 line-clamp-1">{r.notes || '특이 조건 기록 없음'}</div>
+                     </div>
+                     <span className="text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded whitespace-nowrap">
+                       {r.isolationGroup}
+                     </span>
                   </button>
                 ))}
               </div>
             ) : (
               <div className="p-3 bg-indigo-50 rounded border border-indigo-200/50 flex flex-col items-center justify-center text-center">
                 <ShieldCheck className="w-5 h-5 text-indigo-650 mb-1" />
-                <span className="text-[11px] font-bold text-indigo-900">모두 안전히 연결 상태</span>
-                <span className="text-[10px] text-indigo-600 mt-0.5">네트워크 격리가 부재합니다.</span>
+                <span className="text-[11px] font-bold text-indigo-900">도움이 필요한 고립군 주민 없음</span>
+                <span className="text-[10px] text-indigo-600 mt-0.5">모든 주민이 "해당없음" 상태입니다.</span>
               </div>
             )}
           </div>
 
           <div className="pt-2 border-t border-slate-200">
             <h5 className="text-[9px] font-bold text-slate-400 uppercase mb-1.5">시각화 범례</h5>
-            <div className="grid grid-cols-2 gap-1.5 text-[10px] text-slate-600 font-semibold">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded bg-rose-450 inline-block"></span>
+            <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-600 font-semibold mt-1">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full border inline-block shrink-0" style={{ backgroundColor: '#ef4444', borderColor: '#991b1b', borderWidth: '1px' }}></span>
                 <span>여성 주민</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded bg-cyan-450 inline-block"></span>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full border inline-block shrink-0" style={{ backgroundColor: '#3b82f6', borderColor: '#1d4ed8', borderWidth: '1px' }}></span>
                 <span>남성 주민</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded bg-red-500 inline-block ring-2 ring-red-150 animate-pulse"></span>
-                <span>고립 주민 (적색)</span>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full border-2 inline-block shrink-0" style={{ backgroundColor: '#f1f5f9', borderColor: '#6b21a8' }}></span>
+                <span>장애 주민(보라 테두리)</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded bg-amber-400 inline-block border border-amber-500"></span>
-                <span>선택 하이라이트</span>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full border-2 inline-block shrink-0 animate-pulse" style={{ backgroundColor: '#f1f5f9', borderColor: '#facc15' }}></span>
+                <span>고립 주민(황색 테두리)</span>
+              </div>
+              <div className="flex items-center gap-2 col-span-2 mt-1">
+                <span className="w-3 h-3 rounded-full border inline-block shrink-0" style={{ backgroundColor: '#fbbf24', borderColor: '#d97706', borderWidth: '1px' }}></span>
+                <span>선택 주민 하이라이트</span>
               </div>
             </div>
           </div>
