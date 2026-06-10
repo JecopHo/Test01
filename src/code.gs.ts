@@ -137,14 +137,14 @@ function initSpreadsheet() {
     '주민': [
       'id', 'name', 'gender', 'age', 'phone', 'address', 'basicPhone', 'dong', 
       'notes', 'registeredAt', 'disabilityType', 'disabilityDetails', 
-      'isolationGroup', 'emergencyContactRelation', 'managerName'
+      'isolationGroup', 'emergencyContactRelation', 'managerName', 'last_updated'
     ],
     '참여이력': [
       'id', 'residentId', 'programName', 'participationDate', 'durationHours', 
-      'progressStatus', 'notes'
+      'progressStatus', 'notes', 'last_updated'
     ],
     '관계망': [
-      'id', 'sourceId', 'targetId', 'relationType', 'strength', 'notes'
+      'id', 'sourceId', 'targetId', 'relationType', 'strength', 'notes', 'last_updated'
     ]
   };
 
@@ -226,7 +226,7 @@ function getSheetData(sheetName) {
   return data;
 }
 
-// 데이터 삽입 및 업데이트 (id 기준으로 자동 식별)
+// 데이터 삽입 및 업데이트 (id 기준으로 자동 식별 및 타임스탬프 충돌 감지)
 function saveRow(sheetName, item) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   const rows = sheet.getDataRange().getValues();
@@ -235,6 +235,48 @@ function saveRow(sheetName, item) {
   if (!item.id) {
     // ID가 없을 경우 새로운 고유 ID 자동 생성
     item.id = 'ID_' + Math.random().toString(36).substr(2, 9).toUpperCase();
+  }
+
+  // Ensure last_updated is present on the saving item
+  if (!item.last_updated) {
+    item.last_updated = new Date().toISOString();
+  }
+
+  const idColIndex = headers.indexOf('id');
+  const lastUpdatedColIndex = headers.indexOf('last_updated');
+
+  // 기존 행 업데이트 검사
+  let foundRowIndex = -1;
+  if (idColIndex !== -1) {
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][idColIndex] === item.id) {
+        foundRowIndex = i + 1; // 1-based index 및 1번은 헤더이므로 보정
+        break;
+      }
+    }
+  }
+
+  // 충돌 방지 로직: 이미 더 나중의 시간대에 작성된 행이 존재한다면, 덮어쓰기하지 않고 서버 데이터 보호
+  if (foundRowIndex !== -1 && lastUpdatedColIndex !== -1) {
+    const existingLastUpdatedVal = rows[foundRowIndex - 1][lastUpdatedColIndex];
+    if (existingLastUpdatedVal) {
+      const existingTime = new Date(existingLastUpdatedVal).getTime();
+      const incomingTime = item.last_updated ? new Date(item.last_updated).getTime() : 0;
+      
+      if (!isNaN(existingTime) && !isNaN(incomingTime) && existingTime > incomingTime) {
+        const existingItem = {};
+        for (let j = 0; j < headers.length; j++) {
+          existingItem[headers[j]] = rows[foundRowIndex - 1][j];
+        }
+        return { 
+          success: true, 
+          updated: false, 
+          conflict: true, 
+          data: existingItem, 
+          message: "스프레드시트에 더 새로운 데이터가 존재하므로 업데이트를 스킵하고 서버 데이터를 우선시합니다." 
+        };
+      }
+    }
   }
 
   // 각 헤더 필드에 대해 띄어쓰기 및 대소문자 매칭을 하고 누락될 경우 안전하게 빈 문자열 "" 처리
@@ -254,15 +296,6 @@ function saveRow(sheetName, item) {
     return val;
   });
 
-  // 기존 행 업데이트 검사
-  let foundRowIndex = -1;
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i][0] === item.id) {
-      foundRowIndex = i + 1; // 1-based index 및 1번은 헤더이므로 보정
-      break;
-    }
-  }
-
   if (foundRowIndex !== -1) {
     // 업데이트
     const range = sheet.getRange(foundRowIndex, 1, 1, headers.length);
@@ -272,7 +305,7 @@ function saveRow(sheetName, item) {
     sheet.appendRow(newRowValues);
   }
 
-  return { success: true, data: item };
+  return { success: true, updated: true, data: item };
 }
 
 // 데이터 삭제

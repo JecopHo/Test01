@@ -19,6 +19,7 @@ export interface Resident {
   isolationGroup?: '해당없음' | '관계지원군' | '일상지원군' | '일상위험고립군' | '집중관리군' | '긴급위기군';
   emergencyContactRelation?: string;
   managerName?: string;
+  last_updated?: string;
 }
 
 export interface Participation {
@@ -29,6 +30,7 @@ export interface Participation {
   durationHours: number;
   progressStatus: '참여예정' | '진행중' | '완료' | '중도포기';
   notes: string;
+  last_updated?: string;
 }
 
 export interface Relationship {
@@ -38,6 +40,7 @@ export interface Relationship {
   relationType: '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타';
   strength: number; // 1 (낮음) to 5 (매우 높음)
   notes: string;
+  last_updated?: string;
 }
 
 export interface GASConfig {

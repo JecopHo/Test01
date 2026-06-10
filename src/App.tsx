@@ -455,6 +455,7 @@ export default function App() {
       isolationGroup: editingResident.isolationGroup || '해당없음',
       emergencyContactRelation: editingResident.emergencyContactRelation || '',
       managerName: editingResident.managerName || '',
+      last_updated: new Date().toISOString(),
     };
 
     // 만약 한 번 숨겼던 단축어(관계, 담당자)를 주관식으로 직접 기입해 주민 정보로 저장한다면, Suggetion 단축어 탭에 다시 표시
@@ -491,7 +492,8 @@ export default function App() {
           participationDate: new Date().toISOString().split('T')[0],
           durationHours: 2,
           progressStatus: '진행중',
-          notes: '주민 신규 편적 시 자동 등록된 프로그램'
+          notes: '주민 신규 편적 시 자동 등록된 프로그램',
+          last_updated: new Date().toISOString(),
         };
         updatedParticipations = [newPart, ...participations];
         setParticipations(updatedParticipations);
@@ -509,7 +511,8 @@ export default function App() {
           targetId: editingResident.initialRelationTargetId,
           relationType: (editingResident.initialRelationType || '이웃') as '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타',
           strength: Number(editingResident.initialRelationStrength || 3),
-          notes: editingResident.initialRelationNotes || '주민 신규 편적 시 자동 등록된 이웃 관계망'
+          notes: editingResident.initialRelationNotes || '주민 신규 편적 시 자동 등록된 이웃 관계망',
+          last_updated: new Date().toISOString(),
         };
         updatedRelationships = [newRel, ...relationships];
         setRelationships(updatedRelationships);
@@ -586,7 +589,8 @@ export default function App() {
       participationDate: newParticipation.participationDate || new Date().toISOString().split('T')[0],
       durationHours: Number(newParticipation.durationHours || 2),
       progressStatus: (newParticipation.progressStatus || '참여예정') as '참여예정' | '진행중' | '완료' | '중도포기',
-      notes: newParticipation.notes || ''
+      notes: newParticipation.notes || '',
+      last_updated: new Date().toISOString()
     };
 
     let updatedParticipations: Participation[];
@@ -622,9 +626,10 @@ export default function App() {
     }
 
     const trimmedNewName = newName.trim();
+    const nowStr = new Date().toISOString();
     
     // update state
-    const updated = participations.map(p => p.programName === oldName ? { ...p, programName: trimmedNewName } : p);
+    const updated = participations.map(p => p.programName === oldName ? { ...p, programName: trimmedNewName, last_updated: nowStr } : p);
     setParticipations(updated);
     saveToLocalStorage(residents, updated, relationships);
     setSelectedProgram(trimmedNewName);
@@ -633,7 +638,7 @@ export default function App() {
     // Call API for each updated participation
     const affected = participations.filter(p => p.programName === oldName);
     for (const p of affected) {
-      await postToGAS('saveParticipation', { ...p, programName: trimmedNewName });
+      await postToGAS('saveParticipation', { ...p, programName: trimmedNewName, last_updated: nowStr });
     }
 
     if (gasConfig.isEnabled && gasConfig.url) {
@@ -692,7 +697,8 @@ export default function App() {
         targetId: newRelationship.targetId,
         relationType: (newRelationship.relationType || '이웃') as '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타',
         strength: Number(newRelationship.strength || 3),
-        notes: newRelationship.notes || ''
+        notes: newRelationship.notes || '',
+        last_updated: new Date().toISOString()
       };
       updatedRelationships = relationships.map(rel => rel.id === editingRelationshipId ? item : rel);
     } else {
@@ -704,7 +710,8 @@ export default function App() {
         targetId: newRelationship.targetId,
         relationType: (newRelationship.relationType || '이웃') as '이웃' | '친척' | '친구' | '지인' | '돌봄제공자' | '공공기관' | '기타',
         strength: Number(newRelationship.strength || 3),
-        notes: newRelationship.notes || ''
+        notes: newRelationship.notes || '',
+        last_updated: new Date().toISOString()
       };
       updatedRelationships = [item, ...relationships];
     }
