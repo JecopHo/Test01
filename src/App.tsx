@@ -1809,7 +1809,7 @@ export default function App() {
                     <tr className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
                       <th className="p-2.5">수혜자성명</th>
                       <th className="p-2.5">참여 프로그램명</th>
-                      <th className="p-2.5">수혜 일조</th>
+                      <th className="p-2.5">참여일(시작일)</th>
                       <th className="p-2.5">수당 (시간)</th>
                       <th className="p-2.5">진행 상태</th>
                       <th className="p-2.5">기록내용 및 비고</th>
@@ -2324,7 +2324,7 @@ export default function App() {
             </button>
 
             <h3 className="text-sm font-bold text-slate-950 mb-1">
-              {newParticipation.id ? '프로그램 참여 기록 수정' : '프로그램 참여 기록장 기록'}
+              {newParticipation.id ? '프로그램 참여 기록 수정' : '프로그램 참여 항목'}
             </h3>
             <p className="text-xs text-slate-400 mb-3">
               {newParticipation.id ? '선택한 주민의 참여 기록 및 수혜 명세 세부정보를 수정합니다.' : '현재 주민의 행사, 노래교실, 일자리, 배달 수혜내용을 등재합니다.'}
@@ -2359,7 +2359,7 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">수혜 일조</label>
+                  <label className="block font-semibold text-slate-700 mb-1">참여일(시작일)</label>
                   <input
                     type="date"
                     required
@@ -2369,7 +2369,7 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">체류 / 수여시간 (시간)</label>
+                  <label className="block font-semibold text-slate-700 mb-1">프로그램 참여 시간 (시간)</label>
                   <input
                     type="number"
                     step="0.5"
@@ -2382,7 +2382,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">이수 및 도중 상태</label>
+                <label className="block font-semibold text-slate-700 mb-1">프로그램 참여 상태</label>
                 <select
                   value={newParticipation.progressStatus || '참여예정'}
                   onChange={(e) => setNewParticipation({ ...newParticipation, progressStatus: e.target.value as any })}
