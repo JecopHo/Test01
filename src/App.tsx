@@ -231,7 +231,7 @@ export default function App() {
       }
       const payload = await response.json();
       
-      if (payload.success) {
+      if (payload.success || payload.status === 'success') {
         const data = payload.data || {};
         setResidents(data.residents || []);
         setParticipations(data.participations || []);
