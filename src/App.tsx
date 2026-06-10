@@ -37,7 +37,7 @@ import { GOOGLE_APPS_SCRIPT_CODE } from './code.gs';
 import NetworkGraph from './components/NetworkGraph';
 
 // --- 구글 Apps Script Web App URL 고정 (하드코딩) ---
-const GOOGLE_WEB_APP_URL: string = "여기에_구글_URL을_넣으세요";
+const GOOGLE_WEB_APP_URL: string = "https://script.google.com/macros/s/AKfycbxkS72EtXQfVK1HW778ZzrUu63kKBKB5mtYjsWM9yJ_Aqv-dn1mTpuJMwn8cDB0-M8j/exec";
 
 // --- 생년월일 및 연령 계산 파서 시스템 ---
 export const getResidentAgeNumber = (ageVal: string | number | undefined): number => {

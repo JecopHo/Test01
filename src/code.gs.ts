@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export const GOOGLE_APPS_SCRIPT_CODE = `/**
+const GOOGLE_APPS_SCRIPT_CODE = `/**
  * 구글 스프레드시트 기반 풀스택 주민 정보 & 관계망 관리 API
  * 
  * [설치 방법]
