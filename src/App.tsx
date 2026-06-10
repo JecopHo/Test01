@@ -36,6 +36,9 @@ import { MOCK_RESIDENTS, MOCK_PARTICIPATIONS, MOCK_RELATIONSHIPS } from './mockD
 import { GOOGLE_APPS_SCRIPT_CODE } from './code.gs';
 import NetworkGraph from './components/NetworkGraph';
 
+// --- 구글 Apps Script Web App URL 고정 (하드코딩) ---
+const GOOGLE_WEB_APP_URL: string = "여기에_구글_URL을_넣으세요";
+
 // --- 생년월일 및 연령 계산 파서 시스템 ---
 export const getResidentAgeNumber = (ageVal: string | number | undefined): number => {
   if (ageVal === undefined || ageVal === null) return 70;
@@ -127,9 +130,11 @@ export default function App() {
   const [relationships, setRelationships] = useState<Relationship[]>([]);
   
   // GAS 연동 상태
+  const isGasConfigured = GOOGLE_WEB_APP_URL && GOOGLE_WEB_APP_URL !== "여기에_구글_URL을_넣으세요" && GOOGLE_WEB_APP_URL.trim() !== "";
+
   const [gasConfig, setGasConfig] = useState<GASConfig>({
-    url: '',
-    isEnabled: false
+    url: isGasConfigured ? GOOGLE_WEB_APP_URL.trim() : '',
+    isEnabled: isGasConfigured
   });
   
   // UI 컨트롤
@@ -200,15 +205,20 @@ export default function App() {
 
   // --- 데이터 불러오기 및 초기화 ---
   useEffect(() => {
-    // 1. 로컬 스토리지 기능 전면 삭제로 인해 빈 값으로 강제 초기화
-    setInputGasUrl('');
-    setInputGasEnabled(false);
-    setGasConfig({ url: '', isEnabled: false });
+    // 1. 고정 복지관 URL 연동 세팅
+    setInputGasUrl(isGasConfigured ? GOOGLE_WEB_APP_URL.trim() : '');
+    setInputGasEnabled(isGasConfigured);
 
-    // 2. 기본 가용 데이터를 in-memory로 직접 세팅
-    setResidents(MOCK_RESIDENTS);
-    setParticipations(MOCK_PARTICIPATIONS);
-    setRelationships(MOCK_RELATIONSHIPS);
+    if (isGasConfigured) {
+      const url = GOOGLE_WEB_APP_URL.trim();
+      setGasConfig({ url, isEnabled: true });
+      fetchFromGAS(url);
+    } else {
+      // 2. 비연동(체험 모드)일 때만 모크 데이터를 인메모리에 세팅
+      setResidents(MOCK_RESIDENTS);
+      setParticipations(MOCK_PARTICIPATIONS);
+      setRelationships(MOCK_RELATIONSHIPS);
+    }
   }, []);
 
   // --- GAS 웹앱 시트 API 비동기 통신 메소드 ---
@@ -857,7 +867,7 @@ export default function App() {
               : 'bg-amber-900/60 text-amber-200 border-amber-800'
           }`}>
             <Database className="w-3.5 h-3.5" />
-            <span>{gasConfig.isEnabled ? '실시간 구글 시트 연동 중' : '체험 모드 (로컬 저장)'}</span>
+            <span>{gasConfig.isEnabled ? '실시간 구글 시트 연동 중' : '체험 모드 (임시 메모리 저장)'}</span>
             {gasConfig.isEnabled && (
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping"></span>
             )}
@@ -877,8 +887,6 @@ export default function App() {
 
             <button
               onClick={() => {
-                setInputGasUrl(gasConfig.url);
-                setInputGasEnabled(gasConfig.isEnabled);
                 setShowGasModal(true);
               }}
               className="bg-indigo-800 hover:bg-indigo-700 border border-indigo-700 p-1.5 px-3 rounded text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
@@ -2616,35 +2624,28 @@ export default function App() {
                 <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                   <span className="font-bold text-slate-800 text-xs flex items-center gap-1">
                     <Database className="w-3.5 h-3.5 text-indigo-600" />
-                    실시간 구글 시트 클라우드 연동
+                    실시간 구글 시트 클라우드 연동 상태
                   </span>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={inputGasEnabled}
-                      onChange={(e) => setInputGasEnabled(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-8 h-4 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
-                    <span className="ml-1.5 text-[10px] font-bold text-slate-500">
-                      {inputGasEnabled ? '켬' : '끎'}
-                    </span>
-                  </label>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isGasConfigured ? 'bg-emerald-100 text-emerald-850 font-extrabold' : 'bg-slate-200 text-slate-600 font-bold'}`}>
+                    {isGasConfigured ? '연동 활성화됨' : '미연동 (체험 모드)'}
+                  </span>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="font-semibold text-slate-705 block text-slate-750">Google Apps Script Web App URL</label>
-                  <input
-                    type="url"
-                    placeholder="https://script.google.com/macros/s/.../exec"
-                    value={inputGasUrl}
-                    onChange={(e) => setInputGasUrl(e.target.value)}
-                    className="w-full text-xs p-2 border border-slate-200 rounded outline-hidden bg-white focus:ring-2 focus:ring-indigo-500 text-slate-800"
-                    disabled={!inputGasEnabled}
-                  />
-                  <p className="text-[10px] text-slate-400 leading-relaxed font-normal">
-                    * 구글 스프레드시트 연동을 활성화하고 본인의 앱스 스크립트 웹 앱 주소를 복사-붙여넣기하면, 실시간 클라우드 저장이 연계되어 PC-모바일 기기가 같은 클라우드 시트를 공용 사용하도록 자동 실시간 정렬화처리됩니다.
-                  </p>
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-700 block text-xs">고정된 구글 시트 웹 앱 API URL</label>
+                  <div className="p-2 border border-slate-200 bg-slate-100 rounded text-[11px] font-mono select-all truncate">
+                    {isGasConfigured ? GOOGLE_WEB_APP_URL : '(소스코드 최상단 GOOGLE_WEB_APP_URL에 지정된 주소가 없습니다)'}
+                  </div>
+                  {!isGasConfigured && (
+                    <p className="text-[10px] text-red-500 font-semibold leading-relaxed mt-1">
+                      ※ src/App.tsx 소스코드 최상단 GOOGLE_WEB_APP_URL 변수에 본인의 가스 웹 앱 주소를 등록해주셔야 실시간 양방향 클라우드 저장이 가동됩니다. 현재는 임시 인메모리 세션입니다.
+                    </p>
+                  )}
+                  {isGasConfigured && (
+                    <p className="text-[10px] text-slate-400 font-normal leading-relaxed mt-1">
+                      * 현재 구글 시트 API 주소가 변수로 아예 영구 고정(Hard-coded)되어 있습니다. 매번 설정창에 번거롭게 기재할 필요가 없고, 접속하는 PC와 모바일 기기가 100% 동일한 Google Sheets 원본을 양방향 갱신합니다.
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex justify-between items-center pt-1.5 gap-2">
@@ -2657,10 +2658,19 @@ export default function App() {
                     <span>{isCopied ? '복사 완료!' : '스크립트 코드 복사 (원전)'}</span>
                   </button>
                   <button
-                    type="submit"
-                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 font-bold text-white rounded cursor-pointer text-[11px] transition-colors"
+                    type="button"
+                    onClick={() => {
+                      if (isGasConfigured) {
+                        fetchFromGAS(GOOGLE_WEB_APP_URL.trim());
+                      } else {
+                        alert("연동된 구글 시트 API URL 주소가 아직 없습니다. src/App.tsx의 최상단 GOOGLE_WEB_APP_URL에 실질 도메인을 정의해 주세요.");
+                      }
+                    }}
+                    disabled={isLoading}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 font-bold text-white rounded cursor-pointer text-[11px] transition-colors flex items-center gap-1 disabled:opacity-50"
                   >
-                    연동 설정 저장 및 동기화
+                    <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+                    <span>연동 상태 확인 및 강제 새로고침</span>
                   </button>
                 </div>
               </form>
